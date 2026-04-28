@@ -13,6 +13,7 @@ const PAGE_TYPES = [
 interface KeywordResult {
   keyword: string; volume: number; kd: number; kd_tag: string
   content_placement?: string; use_case?: string; note?: string; reason?: string; validated?: boolean
+  [key: string]: unknown
 }
 
 interface StrategyResult {
