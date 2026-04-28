@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0c0c0c;
+  --surface: #141414;
+  --surface-2: #1c1c1c;
+  --border: #2a2a2a;
+  --border-hover: #3a3a3a;
+  --text: #e8e8e8;
+  --text-muted: #666;
+  --text-dim: #999;
+  --accent: #00e676;
+  --accent-dim: #00e67620;
+  --accent-hover: #00ff88;
+  --warn: #ffb300;
+  --danger: #ff5252;
+  --tag-priority: #00e676;
+  --tag-midterm: #ffb300;
+  --tag-longterm: #666;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* Input base */
+input, textarea, select {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+}
+
+/* Button base */
+button {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+/* Tag pills */
+.tag-priority { color: var(--tag-priority); border-color: var(--tag-priority); }
+.tag-midterm  { color: var(--tag-midterm);  border-color: var(--tag-midterm); }
+.tag-longterm { color: var(--tag-longterm); border-color: var(--tag-longterm); }
+
+/* Pulsing dot for loading */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.pulse { animation: pulse-dot 1.2s infinite; }
+
+/* Fade in */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.3s ease forwards; }
