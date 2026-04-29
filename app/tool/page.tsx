@@ -320,17 +320,17 @@ export default function ToolPage() {
                   <KdTag tag={result.primary_keyword.kd_tag} />
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>vol {result.primary_keyword.volume.toLocaleString()}</span>
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>kd {result.primary_keyword.kd}</span>
-                  {result.primary_keyword.intent && (
+                  {!!result.primary_keyword.intent && (
                     <span style={{ color: 'var(--accent)', fontSize: '10px', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 6px' }}>
                       {String(result.primary_keyword.intent)}
                     </span>
                   )}
-                  {result.primary_keyword.trend_direction && (
+                  {!!result.primary_keyword.trend_direction && (
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                       {String(result.primary_keyword.trend_direction) === 'Rising' ? '↑' : String(result.primary_keyword.trend_direction) === 'Declining' ? '↓' : '→'} {String(result.primary_keyword.trend_direction)}
                     </span>
                   )}
-                  {result.primary_keyword.density !== undefined && (
+                  {result.primary_keyword.density != null && (
                     <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>density {Number(result.primary_keyword.density).toFixed(2)}</span>
                   )}
                 </div>
