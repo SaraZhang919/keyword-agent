@@ -1,12 +1,16 @@
 export interface KeywordRow {
   keyword: string
+  intent: string
   volume: number
+  trend: string
   kd: number
   cpc: number
+  competitiveDensity: number
+  serpFeatures: string
+  numberOfResults: number
   kdTag: 'Priority' | 'Mid-term' | 'Long-term'
 }
 
-// Parse a single CSV line respecting quoted fields
 function parseCSVLine(line: string): string[] {
   const result: string[] = []
   let current = ''
@@ -25,41 +29,55 @@ function clean(val: string): string {
 }
 
 function getKdTag(kd: number): KeywordRow['kdTag'] {
-  if (kd < 30) return 'Priority'
-  if (kd < 60) return 'Mid-term'
+  if (kd < 40) return 'Priority'
+  if (kd <= 80) return 'Mid-term'
   return 'Long-term'
 }
 
 export function parseCSV(csvText: string): { rows: KeywordRow[]; error?: string } {
-  // Strip BOM if present
   const text = csvText.replace(/^\uFEFF/, '')
   const lines = text.split(/\r?\n/).filter(l => l.trim())
   if (lines.length < 2) return { rows: [], error: 'CSV appears empty' }
 
   const headers = parseCSVLine(lines[0]).map(h => clean(h).toLowerCase())
 
-  // Flexible column detection for SEMrush export variations
-  const kwIdx = headers.findIndex(h => h === 'keyword' || h === 'keywords')
+  // Required
+  const kwIdx  = headers.findIndex(h => h === 'keyword' || h === 'keywords')
   const volIdx = headers.findIndex(h =>
     h === 'volume' || h === 'search volume' || h.includes('monthly searches') || h === 'avg. monthly searches'
   )
-  const kdIdx = headers.findIndex(h =>
-    h === 'kd' || h === 'kd%' || h === 'keyword difficulty' || h === 'difficulty'
-  )
-  const cpcIdx = headers.findIndex(h => h === 'cpc' || h === 'cpc (usd)' || h.startsWith('cpc'))
-
   if (kwIdx === -1) return { rows: [], error: 'Could not find "Keyword" column. Check your CSV headers.' }
   if (volIdx === -1) return { rows: [], error: 'Could not find "Volume" column. Check your CSV headers.' }
+
+  // Optional
+  const intentIdx       = headers.findIndex(h => h === 'intent' || h === 'search intent')
+  const trendIdx        = headers.findIndex(h => h === 'trend' || h.includes('trend'))
+  const kdIdx           = headers.findIndex(h => h === 'kd' || h === 'kd%' || h === 'keyword difficulty' || h === 'difficulty')
+  const cpcIdx          = headers.findIndex(h => h === 'cpc' || h === 'cpc (usd)' || h.startsWith('cpc'))
+  const densityIdx      = headers.findIndex(h => h === 'competitive density' || h === 'com.' || h === 'competition')
+  const serpIdx         = headers.findIndex(h => h.includes('serp feature') || h === 'serp features')
+  const numResultsIdx   = headers.findIndex(h => h === 'number of results' || h === 'results')
 
   const rows: KeywordRow[] = []
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i])
     const keyword = clean(cols[kwIdx] ?? '')
     if (!keyword) continue
-    const volume = parseInt(clean(cols[volIdx] ?? '0')) || 0
-    const kd = kdIdx >= 0 ? parseFloat(clean(cols[kdIdx] ?? '0')) || 0 : 0
-    const cpc = cpcIdx >= 0 ? parseFloat(clean(cols[cpcIdx] ?? '0')) || 0 : 0
-    rows.push({ keyword, volume, kd, cpc, kdTag: getKdTag(kd) })
+
+    const volume             = parseInt(clean(cols[volIdx] ?? '0')) || 0
+    const kd                 = kdIdx >= 0 ? parseFloat(clean(cols[kdIdx] ?? '0')) || 0 : 0
+    const cpc                = cpcIdx >= 0 ? parseFloat(clean(cols[cpcIdx] ?? '0')) || 0 : 0
+    const intent             = intentIdx >= 0 ? clean(cols[intentIdx] ?? '') || 'Unknown' : 'Unknown'
+    const trend              = trendIdx >= 0 ? clean(cols[trendIdx] ?? '') || 'N/A' : 'N/A'
+    const competitiveDensity = densityIdx >= 0 ? parseFloat(clean(cols[densityIdx] ?? '0')) || 0 : 0
+    const serpFeatures       = serpIdx >= 0 ? clean(cols[serpIdx] ?? '') || 'None' : 'None'
+    const numberOfResults    = numResultsIdx >= 0 ? parseInt(clean(cols[numResultsIdx] ?? '0')) || 0 : 0
+
+    rows.push({
+      keyword, intent, volume, trend, kd, cpc,
+      competitiveDensity, serpFeatures, numberOfResults,
+      kdTag: getKdTag(kd)
+    })
   }
 
   return { rows }
@@ -71,11 +89,11 @@ export function preFilter(rows: KeywordRow[]): {
 } {
   const total = rows.length
 
-  // 1. Remove volume < 30
+  // Remove volume < 30 only — KD is handled by AI layer
   const volumeFiltered = rows.filter(k => k.volume >= 30)
   const afterVolumeFilter = volumeFiltered.length
 
-  // 2. Deduplicate — keep highest volume per normalized keyword
+  // Deduplicate — keep highest volume per normalized keyword
   const seen = new Map<string, KeywordRow>()
   for (const kw of volumeFiltered) {
     const key = kw.keyword.toLowerCase().replace(/\s+/g, ' ')
@@ -83,7 +101,7 @@ export function preFilter(rows: KeywordRow[]): {
     if (!existing || existing.volume < kw.volume) seen.set(key, kw)
   }
 
-  // 3. Sort by volume descending, take top 300 for AI
+  // Sort by volume desc, cap at 300 for AI
   const filtered = Array.from(seen.values())
     .sort((a, b) => b.volume - a.volume)
     .slice(0, 300)
@@ -92,7 +110,20 @@ export function preFilter(rows: KeywordRow[]): {
 }
 
 export function formatForAI(keywords: KeywordRow[]): string {
-  return keywords
-    .map(k => `${k.keyword} | vol:${k.volume} | kd:${k.kd} | cpc:$${k.cpc.toFixed(2)} | tag:${k.kdTag}`)
-    .join('\n')
+  return keywords.map(k => {
+    const parts = [
+      k.keyword,
+      `intent:${k.intent}`,
+      `vol:${k.volume}`,
+      `trend:${k.trend}`,
+      `kd:${k.kd}`,
+      `tag:${k.kdTag}`,
+      `cpc:$${k.cpc.toFixed(2)}`,
+      `density:${k.competitiveDensity.toFixed(2)}`,
+      `serp:${k.serpFeatures}`,
+      k.numberOfResults > 0 ? `results:${(k.numberOfResults / 1_000_000).toFixed(1)}M` : null,
+    ].filter(Boolean)
+    return parts.join(' | ')
+  }).join('\n')
 }
+
