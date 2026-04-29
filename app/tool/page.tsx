@@ -16,12 +16,18 @@ interface KeywordResult {
   [key: string]: unknown
 }
 
+interface PageStrategyNotes {
+  content_format: string
+  biggest_opportunity: string
+  primary_risk: string
+}
+
 interface StrategyResult {
   primary_keyword: KeywordResult & { validated: boolean; note: string }
   supporting_keywords: KeywordResult[]
   longtail_keywords: KeywordResult[]
   excluded_keywords: KeywordResult[]
-  page_strategy_notes: string
+  page_strategy_notes: PageStrategyNotes | string
 }
 
 interface Stats { total: number; afterVolumeFilter: number; afterDedup: number; sentToAI: number }
@@ -314,6 +320,19 @@ export default function ToolPage() {
                   <KdTag tag={result.primary_keyword.kd_tag} />
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>vol {result.primary_keyword.volume.toLocaleString()}</span>
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>kd {result.primary_keyword.kd}</span>
+                  {result.primary_keyword.intent && (
+                    <span style={{ color: 'var(--accent)', fontSize: '10px', border: '1px solid var(--accent)', borderRadius: '3px', padding: '1px 6px' }}>
+                      {String(result.primary_keyword.intent)}
+                    </span>
+                  )}
+                  {result.primary_keyword.trend_direction && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      {String(result.primary_keyword.trend_direction) === 'Rising' ? '↑' : String(result.primary_keyword.trend_direction) === 'Declining' ? '↓' : '→'} {String(result.primary_keyword.trend_direction)}
+                    </span>
+                  )}
+                  {result.primary_keyword.density !== undefined && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>density {Number(result.primary_keyword.density).toFixed(2)}</span>
+                  )}
                 </div>
                 {result.primary_keyword.note && (
                   <p style={{ margin: '10px 0 0', fontSize: '11px', color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
@@ -327,6 +346,7 @@ export default function ToolPage() {
                 <Table
                   rows={result.supporting_keywords}
                   extraCol={{ header: 'Placement', key: 'content_placement' }}
+                  showCpc={true}
                 />
               </Section>
 
@@ -335,6 +355,7 @@ export default function ToolPage() {
                 <Table
                   rows={result.longtail_keywords}
                   extraCol={{ header: 'Use Case', key: 'use_case' }}
+                  showSerp={true}
                 />
               </Section>
 
@@ -343,12 +364,29 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
                 padding: '20px', marginBottom: '16px'
               }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '16px' }}>
                   PAGE STRATEGY NOTES
                 </div>
-                <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                  {result.page_strategy_notes}
-                </p>
+                {typeof result.page_strategy_notes === 'object' && result.page_strategy_notes !== null ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {[
+                      { label: 'Content Format', key: 'content_format', color: 'var(--accent)' },
+                      { label: 'Biggest Opportunity', key: 'biggest_opportunity', color: 'var(--tag-priority)' },
+                      { label: 'Primary Risk', key: 'primary_risk', color: 'var(--warn)' },
+                    ].map(({ label, key, color }) => (
+                      <div key={key}>
+                        <div style={{ fontSize: '10px', color, letterSpacing: '0.08em', marginBottom: '4px' }}>{label.toUpperCase()}</div>
+                        <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                          {String((result.page_strategy_notes as PageStrategyNotes)[key as keyof PageStrategyNotes] ?? '')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                    {String(result.page_strategy_notes)}
+                  </p>
+                )}
               </div>
 
               {/* Excluded Keywords (collapsible) */}
@@ -415,20 +453,40 @@ function Section({ title, count, children }: { title: string; count: number; chi
   )
 }
 
-function Table({ rows, extraCol }: {
+function TrendBadge({ trend }: { trend: string }) {
+  if (!trend || trend === 'N/A') return <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>—</span>
+  // Detect rising/falling from comma-separated trend values
+  const vals = trend.split(',').map(Number).filter(n => !isNaN(n))
+  if (vals.length >= 3) {
+    const first = vals.slice(0, 3).reduce((a, b) => a + b, 0) / 3
+    const last  = vals.slice(-3).reduce((a, b) => a + b, 0) / 3
+    if (last > first * 1.1) return <span style={{ color: 'var(--tag-priority)', fontSize: '10px' }}>↑ rising</span>
+    if (last < first * 0.9) return <span style={{ color: 'var(--danger)', fontSize: '10px' }}>↓ falling</span>
+  }
+  return <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>→ stable</span>
+}
+
+function Table({ rows, extraCol, showCpc, showSerp }: {
   rows: (KeywordResult & Record<string, unknown>)[]
   extraCol: { header: string; key: string }
+  showCpc?: boolean
+  showSerp?: boolean
 }) {
+  const headers = ['Keyword', 'Vol', 'KD', 'Tag', 'Intent', 'Trend']
+  if (showCpc) headers.push('CPC')
+  if (showSerp) headers.push('SERP Features')
+  headers.push(extraCol.header)
+
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)' }}>
-            {['Keyword', 'Volume', 'KD', 'Tag', extraCol.header].map(h => (
+            {headers.map(h => (
               <th key={h} style={{
-                padding: '8px 16px', textAlign: 'left', fontSize: '10px',
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
                 color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)'
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
               }}>{h}</th>
             ))}
           </tr>
@@ -436,11 +494,15 @@ function Table({ rows, extraCol }: {
         <tbody>
           {rows.map((kw, i) => (
             <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text)' }}>{kw.keyword}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
-              <td style={{ padding: '10px 16px' }}><KdTag tag={kw.kd_tag} /></td>
-              <td style={{ padding: '10px 16px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '260px' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', minWidth: '160px' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{Number(kw.volume)?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
+              <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{String(kw.intent ?? '—')}</td>
+              <td style={{ padding: '10px 12px' }}><TrendBadge trend={String(kw.trend ?? '')} /></td>
+              {showCpc && <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>${Number(kw.cpc ?? 0).toFixed(2)}</td>}
+              {showSerp && <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--text-dim)', maxWidth: '160px' }}>{String(kw.serp_features ?? '—')}</td>}
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '220px' }}>
                 {String(kw[extraCol.key] ?? '')}
               </td>
             </tr>
