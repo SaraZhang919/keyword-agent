@@ -54,12 +54,15 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Get prompt ---
-    let prompt = DEFAULT_PROMPT
-    try {
-      const { kv } = await import('@vercel/kv')
-      const saved = await kv.get<string>('keyword-strategy-prompt')
-      if (saved) prompt = saved
-    } catch { /* KV not configured */ }
+   try {
+  const { Redis } = await import('@upstash/redis')
+  const kv = new Redis({
+    url: process.env.KV_REST_API_URL!,
+    token: process.env.KV_REST_API_TOKEN!,
+  })
+  const saved = await kv.get<string>('keyword-strategy-prompt')
+  if (saved) prompt = saved
+} catch { /* KV not configured */ }
 
     const finalPrompt = prompt
       .replace('{{PAGE_TYPE}}', pageType)
