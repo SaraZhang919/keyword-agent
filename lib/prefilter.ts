@@ -1,3 +1,5 @@
+import * as XLSX from 'xlsx'
+
 export interface KeywordRow {
   keyword: string
   intent: string
@@ -13,36 +15,19 @@ export interface KeywordRow {
   isBrandTerm: boolean
 }
 
-// Known competitor brand names in AI video/image tool space
 const COMPETITOR_BRANDS = [
   'hitpaw','topaz','capcut','canva','adobe','premiere','davinci','resolve',
   'media.io','mediaio','fotor','remini','picsart','avclabs','flixier','aiarty',
   'youcam','facewow','remaker','aiease','kling','runway','pika','sora',
   'imgupscaler','videoproc','winxvideo','movavi','wondershare','filmora',
   'clideo','clipchamp','veed','unscreen','luma','kaiber','genmo','pictory',
-  'invideo','flexclip','animoto','magisto','typito','kapwing'
+  'invideo','flexclip','animoto','magisto','typito','kapwing','vmake',
+  'airbrush','wink','winkfolio'
 ]
 
 function isBrand(keyword: string): boolean {
   const lower = keyword.toLowerCase()
   return COMPETITOR_BRANDS.some(brand => lower.includes(brand))
-}
-
-function parseCSVLine(line: string): string[] {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-  for (const char of line) {
-    if (char === '"') { inQuotes = !inQuotes }
-    else if ((char === ',' || char === ';') && !inQuotes) { result.push(current.trim()); current = '' }
-    else { current += char }
-  }
-  result.push(current.trim())
-  return result
-}
-
-function clean(val: string): string {
-  return val.replace(/^"|"$/g, '').replace(/,/g, '').trim()
 }
 
 function getKdTag(kd: number): KeywordRow['kdTag'] {
@@ -51,47 +36,74 @@ function getKdTag(kd: number): KeywordRow['kdTag'] {
   return 'Long-term'
 }
 
-export function parseCSV(
-  csvText: string,
+function findCol(headers: string[], variants: string[]): number {
+  return headers.findIndex(h => variants.some(v => h === v || h.includes(v)))
+}
+
+// Convert any file (xlsx or csv) to array of row objects
+export async function fileToRows(
+  file: File
+): Promise<{ rows: Record<string, unknown>[]; error?: string }> {
+  try {
+    const buffer = await file.arrayBuffer()
+    const wb = XLSX.read(buffer, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json(ws, {
+      defval: '',
+      raw: false, // convert everything to strings first
+    }) as Record<string, unknown>[]
+    if (rows.length === 0) return { rows: [], error: 'File appears empty' }
+    return { rows }
+  } catch {
+    return { rows: [], error: 'Could not parse file. Please use .csv or .xlsx format.' }
+  }
+}
+
+export function parseRows(
+  rows: Record<string, unknown>[],
   source: KeywordRow['source']
 ): { rows: KeywordRow[]; error?: string } {
-  const text = csvText.replace(/^\uFEFF/, '')
-  const lines = text.split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return { rows: [], error: `${source} CSV appears empty` }
+  if (rows.length === 0) return { rows: [], error: `${source} file appears empty` }
 
-  const headers = parseCSVLine(lines[0]).map(h => clean(h).toLowerCase())
+  // Get headers from first row keys
+  const headers = Object.keys(rows[0]).map(h => h.toLowerCase().trim())
 
-  const kwIdx   = headers.findIndex(h => h === 'keyword' || h === 'keywords')
-  const volIdx  = headers.findIndex(h =>
-    h === 'volume' || h === 'search volume' || h.includes('monthly searches') || h === 'avg. monthly searches'
-  )
-  if (kwIdx === -1) return { rows: [], error: `${source} CSV: Could not find "Keyword" column.` }
-  if (volIdx === -1) return { rows: [], error: `${source} CSV: Could not find "Volume" column.` }
+  // Flexible column matching — handles all SEMrush export variants
+  const kwIdx       = findCol(headers, ['keyword', 'keywords'])
+  const volIdx      = findCol(headers, ['volume', 'search volume', 'monthly searches', 'avg. monthly searches'])
+  const intentIdx   = findCol(headers, ['intent', 'intents', 'search intent'])
+  const trendIdx    = findCol(headers, ['trend', 'trend (last 12 months)'])
+  const kdIdx       = findCol(headers, ['keyword difficulty', 'kd', 'kd%', 'difficulty'])
+  const cpcIdx      = findCol(headers, ['cpc (usd)', 'cpc', 'cost per click'])
+  const densityIdx  = findCol(headers, ['competitive density', 'competition density', 'com.', 'competition'])
+  const serpIdx     = findCol(headers, ['serp features', 'serp feature'])
+  const resultsIdx  = findCol(headers, ['number of results', 'results'])
 
-  const intentIdx       = headers.findIndex(h => h === 'intent' || h === 'search intent')
-  const trendIdx        = headers.findIndex(h => h === 'trend' || h.includes('trend'))
-  const kdIdx           = headers.findIndex(h => h === 'kd' || h === 'kd%' || h === 'keyword difficulty' || h === 'difficulty')
-  const cpcIdx          = headers.findIndex(h => h === 'cpc' || h === 'cpc (usd)' || h.startsWith('cpc'))
-  const densityIdx      = headers.findIndex(h => h === 'competitive density' || h === 'com.' || h === 'competition')
-  const serpIdx         = headers.findIndex(h => h.includes('serp feature') || h === 'serp features')
-  const numResultsIdx   = headers.findIndex(h => h === 'number of results' || h === 'results')
+  if (kwIdx === -1)  return { rows: [], error: `${source} file: Could not find "Keyword" column. Found: ${headers.slice(0,6).join(', ')}` }
+  if (volIdx === -1) return { rows: [], error: `${source} file: Could not find "Volume" column. Found: ${headers.slice(0,6).join(', ')}` }
 
-  const rows: KeywordRow[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i])
-    const keyword = clean(cols[kwIdx] ?? '')
+  const colKeys = Object.keys(rows[0])
+
+  function getVal(row: Record<string, unknown>, idx: number): string {
+    if (idx === -1) return ''
+    return String(row[colKeys[idx]] ?? '').trim()
+  }
+
+  const parsed: KeywordRow[] = []
+  for (const row of rows) {
+    const keyword = getVal(row, kwIdx)
     if (!keyword) continue
 
-    const volume             = parseInt(clean(cols[volIdx] ?? '0')) || 0
-    const kd                 = kdIdx >= 0 ? parseFloat(clean(cols[kdIdx] ?? '0')) || 0 : 0
-    const cpc                = cpcIdx >= 0 ? parseFloat(clean(cols[cpcIdx] ?? '0')) || 0 : 0
-    const intent             = intentIdx >= 0 ? clean(cols[intentIdx] ?? '') || 'Unknown' : 'Unknown'
-    const trend              = trendIdx >= 0 ? clean(cols[trendIdx] ?? '') || 'N/A' : 'N/A'
-    const competitiveDensity = densityIdx >= 0 ? parseFloat(clean(cols[densityIdx] ?? '0')) || 0 : 0
-    const serpFeatures       = serpIdx >= 0 ? clean(cols[serpIdx] ?? '') || 'None' : 'None'
-    const numberOfResults    = numResultsIdx >= 0 ? parseInt(clean(cols[numResultsIdx] ?? '0')) || 0 : 0
+    const volume             = parseInt(getVal(row, volIdx).replace(/,/g, '')) || 0
+    const kd                 = parseFloat(getVal(row, kdIdx).replace(/,/g, '')) || 0
+    const cpc                = parseFloat(getVal(row, cpcIdx).replace(/[$,]/g, '')) || 0
+    const intent             = getVal(row, intentIdx) || 'Unknown'
+    const trend              = getVal(row, trendIdx) || 'N/A'
+    const competitiveDensity = parseFloat(getVal(row, densityIdx).replace(/,/g, '')) || 0
+    const serpFeatures       = getVal(row, serpIdx) || 'None'
+    const numberOfResults    = parseInt(getVal(row, resultsIdx).replace(/,/g, '')) || 0
 
-    rows.push({
+    parsed.push({
       keyword, intent, volume, trend, kd, cpc,
       competitiveDensity, serpFeatures, numberOfResults,
       kdTag: getKdTag(kd),
@@ -100,7 +112,7 @@ export function parseCSV(
     })
   }
 
-  return { rows }
+  return { rows: parsed }
 }
 
 export interface FilterStats {
@@ -119,8 +131,8 @@ export function mergeAndFilter(allRows: KeywordRow[]): {
   stats: FilterStats
 } {
   const sourceCount = {
-    topic: allRows.filter(r => r.source === 'topic').length,
-    related: allRows.filter(r => r.source === 'related').length,
+    topic:      allRows.filter(r => r.source === 'topic').length,
+    related:    allRows.filter(r => r.source === 'related').length,
     competitor: allRows.filter(r => r.source === 'competitor').length,
   }
   const total = allRows.length
@@ -129,7 +141,7 @@ export function mergeAndFilter(allRows: KeywordRow[]): {
   const volumeFiltered = allRows.filter(k => k.volume >= 30)
   const afterVolumeFilter = volumeFiltered.length
 
-  // Deduplicate — prefer topic source over related over competitor when same keyword
+  // Deduplicate — prefer topic > related > competitor, then higher volume
   const sourceRank: Record<KeywordRow['source'], number> = { topic: 0, related: 1, competitor: 2 }
   const seen = new Map<string, KeywordRow>()
   for (const kw of volumeFiltered) {
@@ -137,27 +149,24 @@ export function mergeAndFilter(allRows: KeywordRow[]): {
     const existing = seen.get(key)
     if (!existing) {
       seen.set(key, kw)
-    } else {
-      // Prefer higher volume, break ties by source rank
-      if (
-        kw.volume > existing.volume ||
-        (kw.volume === existing.volume && sourceRank[kw.source] < sourceRank[existing.source])
-      ) {
-        seen.set(key, kw)
-      }
+    } else if (
+      kw.volume > existing.volume ||
+      (kw.volume === existing.volume && sourceRank[kw.source] < sourceRank[existing.source])
+    ) {
+      seen.set(key, kw)
     }
   }
 
   const afterDedup = seen.size
   const brandTerms = Array.from(seen.values()).filter(k => k.isBrandTerm).length
 
-  // Sort: non-brand by volume desc first, then brand terms
-  // Cap at 350 total sent to AI
+  // Non-brand keywords sorted by volume, cap 300
   const nonBrand = Array.from(seen.values())
     .filter(k => !k.isBrandTerm)
     .sort((a, b) => b.volume - a.volume)
     .slice(0, 300)
 
+  // Brand keywords sorted by volume, cap 50
   const brandKeywords = Array.from(seen.values())
     .filter(k => k.isBrandTerm)
     .sort((a, b) => b.volume - a.volume)
@@ -167,14 +176,7 @@ export function mergeAndFilter(allRows: KeywordRow[]): {
 
   return {
     filtered,
-    stats: {
-      ...sourceCount,
-      total,
-      afterVolumeFilter,
-      afterDedup,
-      brandTerms,
-      sentToAI: filtered.length
-    }
+    stats: { ...sourceCount, total, afterVolumeFilter, afterDedup, brandTerms, sentToAI: filtered.length }
   }
 }
 
