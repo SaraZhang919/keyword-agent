@@ -1,49 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseCSV, preFilter, formatForAI } from '@/lib/prefilter'
+import { parseCSV, mergeAndFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const file = formData.get('file') as File | null
-    const pageType = formData.get('pageType') as string
+
+    const topicFile      = formData.get('topicFile') as File | null
+    const relatedFile    = formData.get('relatedFile') as File | null
+    const competitorFile = formData.get('competitorFile') as File | null
+    const pageType       = formData.get('pageType') as string
     const primaryKeyword = formData.get('primaryKeyword') as string
 
-    if (!file || !pageType || !primaryKeyword) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!topicFile || !pageType || !primaryKeyword) {
+      return NextResponse.json({ error: 'Topic keyword file, page type, and primary keyword are required.' }, { status: 400 })
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
-    // --- Stage 1: Parse + Pre-filter ---
-    const csvText = await file.text()
-    const { rows, error: parseError } = parseCSV(csvText)
-    if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
-    if (rows.length === 0) return NextResponse.json({ error: 'No keywords found in CSV' }, { status: 400 })
+    // --- Parse all uploaded files ---
+    let allRows = []
 
-    const { filtered, stats } = preFilter(rows)
-    if (filtered.length === 0) {
-      return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
+    const topicResult = parseCSV(await topicFile.text(), 'topic')
+    if (topicResult.error) return NextResponse.json({ error: topicResult.error }, { status: 400 })
+    allRows.push(...topicResult.rows)
+
+    if (relatedFile) {
+      const relatedResult = parseCSV(await relatedFile.text(), 'related')
+      if (relatedResult.error) return NextResponse.json({ error: relatedResult.error }, { status: 400 })
+      allRows.push(...relatedResult.rows)
     }
 
-    // --- Get prompt (from KV if available, else default) ---
+    if (competitorFile) {
+      const competitorResult = parseCSV(await competitorFile.text(), 'competitor')
+      if (competitorResult.error) return NextResponse.json({ error: competitorResult.error }, { status: 400 })
+      allRows.push(...competitorResult.rows)
+    }
+
+    if (allRows.length === 0) {
+      return NextResponse.json({ error: 'No keywords found in uploaded files.' }, { status: 400 })
+    }
+
+    // --- Merge + pre-filter ---
+    const { filtered, stats } = mergeAndFilter(allRows)
+    if (filtered.length === 0) {
+      return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30).' }, { status: 400 })
+    }
+
+    // --- Get prompt ---
     let prompt = DEFAULT_PROMPT
     try {
       const { kv } = await import('@vercel/kv')
       const saved = await kv.get<string>('keyword-strategy-prompt')
       if (saved) prompt = saved
     } catch {
-      // KV not configured, use default prompt
+      // KV not configured, use default
     }
 
     const finalPrompt = prompt
       .replace('{{PAGE_TYPE}}', pageType)
       .replace('{{PRIMARY_KEYWORD}}', primaryKeyword)
 
-    // --- Stage 2: OpenAI API ---
+    // --- OpenAI API call ---
     const keywordList = formatForAI(filtered)
+
+    const sourceBreakdown = [
+      `${stats.topic} topic`,
+      stats.related > 0 ? `${stats.related} related` : null,
+      stats.competitor > 0 ? `${stats.competitor} competitor` : null,
+    ].filter(Boolean).join(' + ')
 
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -54,15 +81,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4000,
-        response_format: { type: 'json_object' }, // enforces JSON output — no markdown fences
+        response_format: { type: 'json_object' },
         messages: [
-          {
-            role: 'system',
-            content: finalPrompt,
-          },
+          { role: 'system', content: finalPrompt },
           {
             role: 'user',
-            content: `Keyword list (${filtered.length} keywords after pre-filtering ${stats.total} total):\n\n${keywordList}`,
+            content: `Keyword list: ${filtered.length} keywords (${sourceBreakdown}, after filtering ${stats.total} total, ${stats.brandTerms} brand terms included for competitor_insights):\n\n${keywordList}`
           },
         ],
       }),
@@ -76,8 +100,6 @@ export async function POST(request: NextRequest) {
 
     const openaiData = await openaiRes.json()
     const rawText = openaiData.choices?.[0]?.message?.content ?? ''
-
-    // Strip any accidental markdown fences (safety net)
     const jsonText = rawText.replace(/```json|```/g, '').trim()
     const result = JSON.parse(jsonText)
 
