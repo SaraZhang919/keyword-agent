@@ -54,17 +54,18 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Get prompt ---
-   try {
-  const { Redis } = await import('@upstash/redis')
-  const kv = new Redis({
-    url: process.env.KV_REST_API_URL!,
-    token: process.env.KV_REST_API_TOKEN!,
-  })
-  const saved = await kv.get<string>('keyword-strategy-prompt')
-  if (saved) prompt = saved
-} catch { /* KV not configured */ }
+    let systemPrompt = DEFAULT_PROMPT
+    try {
+      const { Redis } = await import('@upstash/redis')
+      const kv = new Redis({
+        url: process.env.KV_REST_API_URL!,
+        token: process.env.KV_REST_API_TOKEN!,
+      })
+      const saved = await kv.get<string>('keyword-strategy-prompt')
+      if (saved) systemPrompt = saved
+    } catch { /* KV not configured */ }
 
-    const finalPrompt = prompt
+    const finalPrompt = systemPrompt
       .replace('{{PAGE_TYPE}}', pageType)
       .replace('{{PRIMARY_KEYWORD}}', primaryKeyword)
 
