@@ -9,6 +9,23 @@ export interface KeywordRow {
   serpFeatures: string
   numberOfResults: number
   kdTag: 'Priority' | 'Mid-term' | 'Long-term'
+  source: 'topic' | 'related' | 'competitor'
+  isBrandTerm: boolean
+}
+
+// Known competitor brand names in AI video/image tool space
+const COMPETITOR_BRANDS = [
+  'hitpaw','topaz','capcut','canva','adobe','premiere','davinci','resolve',
+  'media.io','mediaio','fotor','remini','picsart','avclabs','flixier','aiarty',
+  'youcam','facewow','remaker','aiease','kling','runway','pika','sora',
+  'imgupscaler','videoproc','winxvideo','movavi','wondershare','filmora',
+  'clideo','clipchamp','veed','unscreen','luma','kaiber','genmo','pictory',
+  'invideo','flexclip','animoto','magisto','typito','kapwing'
+]
+
+function isBrand(keyword: string): boolean {
+  const lower = keyword.toLowerCase()
+  return COMPETITOR_BRANDS.some(brand => lower.includes(brand))
 }
 
 function parseCSVLine(line: string): string[] {
@@ -34,22 +51,23 @@ function getKdTag(kd: number): KeywordRow['kdTag'] {
   return 'Long-term'
 }
 
-export function parseCSV(csvText: string): { rows: KeywordRow[]; error?: string } {
+export function parseCSV(
+  csvText: string,
+  source: KeywordRow['source']
+): { rows: KeywordRow[]; error?: string } {
   const text = csvText.replace(/^\uFEFF/, '')
   const lines = text.split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return { rows: [], error: 'CSV appears empty' }
+  if (lines.length < 2) return { rows: [], error: `${source} CSV appears empty` }
 
   const headers = parseCSVLine(lines[0]).map(h => clean(h).toLowerCase())
 
-  // Required
-  const kwIdx  = headers.findIndex(h => h === 'keyword' || h === 'keywords')
-  const volIdx = headers.findIndex(h =>
+  const kwIdx   = headers.findIndex(h => h === 'keyword' || h === 'keywords')
+  const volIdx  = headers.findIndex(h =>
     h === 'volume' || h === 'search volume' || h.includes('monthly searches') || h === 'avg. monthly searches'
   )
-  if (kwIdx === -1) return { rows: [], error: 'Could not find "Keyword" column. Check your CSV headers.' }
-  if (volIdx === -1) return { rows: [], error: 'Could not find "Volume" column. Check your CSV headers.' }
+  if (kwIdx === -1) return { rows: [], error: `${source} CSV: Could not find "Keyword" column.` }
+  if (volIdx === -1) return { rows: [], error: `${source} CSV: Could not find "Volume" column.` }
 
-  // Optional
   const intentIdx       = headers.findIndex(h => h === 'intent' || h === 'search intent')
   const trendIdx        = headers.findIndex(h => h === 'trend' || h.includes('trend'))
   const kdIdx           = headers.findIndex(h => h === 'kd' || h === 'kd%' || h === 'keyword difficulty' || h === 'difficulty')
@@ -76,37 +94,88 @@ export function parseCSV(csvText: string): { rows: KeywordRow[]; error?: string 
     rows.push({
       keyword, intent, volume, trend, kd, cpc,
       competitiveDensity, serpFeatures, numberOfResults,
-      kdTag: getKdTag(kd)
+      kdTag: getKdTag(kd),
+      source,
+      isBrandTerm: isBrand(keyword)
     })
   }
 
   return { rows }
 }
 
-export function preFilter(rows: KeywordRow[]): {
-  filtered: KeywordRow[]
-  stats: { total: number; afterVolumeFilter: number; afterDedup: number }
-} {
-  const total = rows.length
+export interface FilterStats {
+  topic: number
+  related: number
+  competitor: number
+  total: number
+  afterVolumeFilter: number
+  afterDedup: number
+  brandTerms: number
+  sentToAI: number
+}
 
-  // Remove volume < 30 only — KD is handled by AI layer
-  const volumeFiltered = rows.filter(k => k.volume >= 30)
+export function mergeAndFilter(allRows: KeywordRow[]): {
+  filtered: KeywordRow[]
+  stats: FilterStats
+} {
+  const sourceCount = {
+    topic: allRows.filter(r => r.source === 'topic').length,
+    related: allRows.filter(r => r.source === 'related').length,
+    competitor: allRows.filter(r => r.source === 'competitor').length,
+  }
+  const total = allRows.length
+
+  // Remove volume < 30
+  const volumeFiltered = allRows.filter(k => k.volume >= 30)
   const afterVolumeFilter = volumeFiltered.length
 
-  // Deduplicate — keep highest volume per normalized keyword
+  // Deduplicate — prefer topic source over related over competitor when same keyword
+  const sourceRank: Record<KeywordRow['source'], number> = { topic: 0, related: 1, competitor: 2 }
   const seen = new Map<string, KeywordRow>()
   for (const kw of volumeFiltered) {
     const key = kw.keyword.toLowerCase().replace(/\s+/g, ' ')
     const existing = seen.get(key)
-    if (!existing || existing.volume < kw.volume) seen.set(key, kw)
+    if (!existing) {
+      seen.set(key, kw)
+    } else {
+      // Prefer higher volume, break ties by source rank
+      if (
+        kw.volume > existing.volume ||
+        (kw.volume === existing.volume && sourceRank[kw.source] < sourceRank[existing.source])
+      ) {
+        seen.set(key, kw)
+      }
+    }
   }
 
-  // Sort by volume desc, cap at 300 for AI
-  const filtered = Array.from(seen.values())
+  const afterDedup = seen.size
+  const brandTerms = Array.from(seen.values()).filter(k => k.isBrandTerm).length
+
+  // Sort: non-brand by volume desc first, then brand terms
+  // Cap at 350 total sent to AI
+  const nonBrand = Array.from(seen.values())
+    .filter(k => !k.isBrandTerm)
     .sort((a, b) => b.volume - a.volume)
     .slice(0, 300)
 
-  return { filtered, stats: { total, afterVolumeFilter, afterDedup: seen.size } }
+  const brandKeywords = Array.from(seen.values())
+    .filter(k => k.isBrandTerm)
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 50)
+
+  const filtered = [...nonBrand, ...brandKeywords]
+
+  return {
+    filtered,
+    stats: {
+      ...sourceCount,
+      total,
+      afterVolumeFilter,
+      afterDedup,
+      brandTerms,
+      sentToAI: filtered.length
+    }
+  }
 }
 
 export function formatForAI(keywords: KeywordRow[]): string {
@@ -122,8 +191,9 @@ export function formatForAI(keywords: KeywordRow[]): string {
       `density:${k.competitiveDensity.toFixed(2)}`,
       `serp:${k.serpFeatures}`,
       k.numberOfResults > 0 ? `results:${(k.numberOfResults / 1_000_000).toFixed(1)}M` : null,
+      `source:${k.source}`,
+      k.isBrandTerm ? `brand:yes` : null,
     ].filter(Boolean)
     return parts.join(' | ')
   }).join('\n')
 }
-
