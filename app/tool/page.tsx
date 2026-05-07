@@ -10,7 +10,7 @@ const PAGE_TYPES = [
   'Docs Page',
 ]
 
-interface KeywordResult {
+interface KeywordResult extends Record<string, unknown> {
   keyword: string; volume: number; kd: number; kd_tag: string
   content_placement?: string; use_case?: string; note?: string; reason?: string; validated?: boolean
 }
@@ -415,7 +415,7 @@ function Section({ title, count, children }: { title: string; count: number; chi
 }
 
 function Table({ rows, extraCol }: {
-  rows: (KeywordResult & Record<string, unknown>)[]
+  rows: KeywordResult[]
   extraCol: { header: string; key: string }
 }) {
   return (
