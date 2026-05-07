@@ -261,7 +261,7 @@ function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
               <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.competitor_brand ?? '—'}</td>
-              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '240px' }}>{kw.opportunity}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)' }}>{kw.opportunity}</td>
             </tr>
           ))}
         </tbody>
@@ -397,7 +397,7 @@ export default function ToolPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: '780px', margin: '0 auto', padding: '36px 24px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '36px 24px' }}>
 
         {result ? (
           <div className="fade-up">
