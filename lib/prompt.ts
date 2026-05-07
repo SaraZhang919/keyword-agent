@@ -1,5 +1,5 @@
 // Switch to 'claude-sonnet-4-20250514' for Anthropic, or 'gpt-4o' for OpenAI
-export const MODEL = 'claude-sonnet-4-20250514'
+export const MODEL = 'gpt-4o'
 
 export const DEFAULT_PROMPT = `You are an expert SEO strategist. The user is planning a {{PAGE_TYPE}} targeting the primary keyword "{{PRIMARY_KEYWORD}}".
 
