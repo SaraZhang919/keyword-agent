@@ -2,6 +2,68 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+type Section = {
+  id: number
+  label: string
+  file: File | null
+}
+
+interface KeywordResult extends Record<string, unknown> {
+  keyword: string
+  volume: number
+  kd: number
+  kd_tag: string
+  intent?: string
+  trend_direction?: string
+  cpc?: number
+  density?: number
+  source?: string
+  content_placement?: string
+  flag?: string | null
+  use_case?: string
+  serp_features?: string
+  content_format?: string
+  note?: string
+  reason?: string
+  validated?: boolean
+  combined_signal?: string
+  competitor_brand?: string | null
+  opportunity?: string
+}
+
+interface PageStrategyNotes {
+  content_format: string
+  biggest_opportunity: string
+  primary_risk: string
+}
+
+interface MissingExport {
+  topic: string
+  reason: string
+}
+
+interface StrategyResult {
+  primary_keyword: KeywordResult & { validated: boolean; note: string }
+  supporting_keywords: KeywordResult[]
+  longtail_keywords: KeywordResult[]
+  competitor_insights: KeywordResult[]
+  excluded_keywords: KeywordResult[]
+  missing_exports?: MissingExport[]
+  page_strategy_notes: PageStrategyNotes | string
+}
+
+interface Stats {
+  total: number
+  afterVolumeFilter: number
+  afterDedup: number
+  sentToAI: number
+  bySource?: Record<string, number>
+}
+
+const MAX_SECTIONS = 5
+
 const PAGE_TYPES = [
   'Feature Page',
   'Online Tool Page',
@@ -10,20 +72,7 @@ const PAGE_TYPES = [
   'Docs Page',
 ]
 
-interface KeywordResult extends Record<string, unknown> {
-  keyword: string; volume: number; kd: number; kd_tag: string
-  content_placement?: string; use_case?: string; note?: string; reason?: string; validated?: boolean
-}
-
-interface StrategyResult {
-  primary_keyword: KeywordResult & { validated: boolean; note: string }
-  supporting_keywords: KeywordResult[]
-  longtail_keywords: KeywordResult[]
-  excluded_keywords: KeywordResult[]
-  page_strategy_notes: string
-}
-
-interface Stats { total: number; afterVolumeFilter: number; afterDedup: number; sentToAI: number }
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function KdTag({ tag }: { tag: string }) {
   const cls = tag === 'Priority' ? 'tag-priority' : tag === 'Mid-term' ? 'tag-midterm' : 'tag-longterm'
@@ -37,59 +86,255 @@ function KdTag({ tag }: { tag: string }) {
   )
 }
 
-function StatBadge({ label, value }: { label: string; value: number }) {
+function TrendBadge({ direction }: { direction?: string }) {
+  if (!direction) return null
+  const color = direction === 'Rising' ? 'var(--accent)' : direction === 'Declining' ? 'var(--danger)' : 'var(--text-muted)'
+  const arrow = direction === 'Rising' ? '↑' : direction === 'Declining' ? '↓' : '→'
+  return <span style={{ color, fontSize: '10px' }}>{arrow} {direction}</span>
+}
+
+function StatBadge({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--accent)' }}>{value.toLocaleString()}</div>
+      <div style={{ fontSize: '18px', fontWeight: '600', color: accent ? 'var(--accent)' : 'var(--text)' }}>
+        {value.toLocaleString()}
+      </div>
       <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{label}</div>
     </div>
   )
 }
 
+function SectionRow({
+  section, index, canRemove, inputRef, onLabelChange, onFileChange, onRemove
+}: {
+  section: Section
+  index: number
+  canRemove: boolean
+  inputRef: (el: HTMLInputElement | null) => void
+  onLabelChange: (v: string) => void
+  onFileChange: (f: File | null) => void
+  onRemove: () => void
+}) {
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '200px 1fr auto', gap: '10px',
+      alignItems: 'center', background: 'var(--surface)',
+      border: '1px solid var(--border)', borderRadius: '4px', padding: '12px 14px',
+    }}>
+      <input type="text" value={section.label} onChange={e => onLabelChange(e.target.value)}
+        placeholder={`Section ${index + 1} name`} style={{ padding: '7px 10px', fontSize: '12px' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <label style={{
+          display: 'inline-flex', alignItems: 'center', gap: '6px',
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          borderRadius: '4px', padding: '6px 12px', cursor: 'pointer',
+          fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap',
+        }}>
+          <span>↑</span>
+          {section.file ? 'Change file' : 'Upload CSV / XLSX'}
+          <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
+            onChange={e => onFileChange(e.target.files?.[0] ?? null)} />
+        </label>
+        {section.file && (
+          <span style={{ fontSize: '11px', color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            ✓ {section.file.name}
+          </span>
+        )}
+      </div>
+      <button type="button" onClick={onRemove} disabled={!canRemove} style={{
+        background: 'none', border: 'none',
+        color: canRemove ? 'var(--text-muted)' : 'transparent',
+        fontSize: '16px', cursor: canRemove ? 'pointer' : 'default', padding: '2px 4px', lineHeight: 1,
+      }}>×</button>
+    </div>
+  )
+}
+
+function TableSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+      marginBottom: '16px', overflow: 'hidden'
+    }}>
+      <div style={{
+        padding: '14px 20px', borderBottom: '1px solid var(--border)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+      }}>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>{title.toUpperCase()}</span>
+        <span style={{
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          borderRadius: '3px', padding: '1px 8px', fontSize: '10px', color: 'var(--text-muted)'
+        }}>{count}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function SupportingTable({ rows }: { rows: KeywordResult[] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'Intent', 'Placement', 'Flag'].map(h => (
+              <th key={h} style={{
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
+                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((kw, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
+              <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.intent}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '200px' }}>{kw.content_placement}</td>
+              <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--warn)', maxWidth: '160px' }}>{kw.flag}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function LongtailTable({ rows }: { rows: KeywordResult[] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'SERP', 'Content Format', 'Use Case'].map(h => (
+              <th key={h} style={{
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
+                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((kw, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
+              <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.serp_features}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.content_format}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.use_case}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {['Keyword', 'Vol', 'KD', 'Competitor Brand', 'Opportunity'].map(h => (
+              <th key={h} style={{
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
+                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((kw, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.competitor_brand ?? '—'}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '240px' }}>{kw.opportunity}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function ToolPage() {
   const router = useRouter()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [file, setFile] = useState<File | null>(null)
+  const fileRefs = useRef<(HTMLInputElement | null)[]>([])
+
   const [pageType, setPageType] = useState('')
   const [primaryKeyword, setPrimaryKeyword] = useState('')
+  const [sections, setSections] = useState<Section[]>([
+    { id: 0, label: 'Topic Keywords',      file: null },
+    { id: 1, label: 'Related Keywords',    file: null },
+    { id: 2, label: 'Competitor Keywords', file: null },
+  ])
+
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('')
   const [result, setResult] = useState<StrategyResult | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
   const [error, setError] = useState('')
   const [showExcluded, setShowExcluded] = useState(false)
+  const [showCompetitor, setShowCompetitor] = useState(false)
+  const [showMissing, setShowMissing] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  async function handleLogout() {
-    await fetch('/api/logout', { method: 'POST' })
-    router.push('/')
+  function addSection() {
+    if (sections.length >= MAX_SECTIONS) return
+    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null }])
+  }
+
+  function removeSection(id: number) {
+    setSections(prev => prev.filter(s => s.id !== id))
+  }
+
+  function updateLabel(id: number, label: string) {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, label } : s))
+  }
+
+  function updateFile(id: number, file: File | null) {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, file } : s))
   }
 
   async function handleGenerate() {
-    if (!file || !pageType || !primaryKeyword) return
+    const filledSections = sections.filter(s => s.file)
+    if (filledSections.length === 0 || !pageType || !primaryKeyword) return
+
     setLoading(true)
     setError('')
     setResult(null)
 
-    const msgs = [
-      'Parsing CSV...',
-      'Pre-filtering keywords...',
-      'Sending to Claude...',
-      'Building keyword strategy...',
-    ]
+    const msgs = ['Parsing files...', 'Pre-filtering keywords...', 'Sending to AI...', 'Building keyword strategy...']
     let i = 0
     setLoadingMsg(msgs[0])
-    const interval = setInterval(() => {
-      i = (i + 1) % msgs.length
-      setLoadingMsg(msgs[i])
-    }, 2000)
+    const interval = setInterval(() => { i = (i + 1) % msgs.length; setLoadingMsg(msgs[i]) }, 2000)
 
-    const form = new FormData()
-    form.append('file', file)
-    form.append('pageType', pageType)
-    form.append('primaryKeyword', primaryKeyword)
+    const formData = new FormData()
+    formData.append('pageType', pageType)
+    formData.append('primaryKeyword', primaryKeyword.trim())
+    for (const section of sections) {
+      if (!section.file) continue
+      const key = section.label.toLowerCase().replace(/\s+/g, '_')
+      formData.append(`${key}_file`, section.file)
+      formData.append(`${key}_label`, section.label)
+    }
 
-    const res = await fetch('/api/generate', { method: 'POST', body: form })
+    const res = await fetch('/api/generate', { method: 'POST', body: formData })
     clearInterval(interval)
     setLoading(false)
 
@@ -111,10 +356,22 @@ export default function ToolPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const canGenerate = !!file && !!pageType && !!primaryKeyword && !loading
+  function resetForm() {
+    setResult(null); setStats(null); setError('')
+    setSections(prev => prev.map(s => ({ ...s, file: null })))
+    fileRefs.current.forEach(ref => { if (ref) ref.value = '' })
+  }
+
+  const canGenerate = sections.some(s => s.file) && !!pageType && !!primaryKeyword && !loading
+
+  const strategyNotes = result && typeof result.page_strategy_notes === 'object'
+    ? result.page_strategy_notes as PageStrategyNotes : null
+  const strategyString = result && typeof result.page_strategy_notes === 'string'
+    ? result.page_strategy_notes : null
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+
       {/* Header */}
       <header style={{
         borderBottom: '1px solid var(--border)', padding: '0 24px',
@@ -127,325 +384,282 @@ export default function ToolPage() {
           <span style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: '3px', padding: '2px 8px', fontSize: '10px', color: 'var(--text-muted)'
-          }}>v1</span>
+          }}>v2</span>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <button onClick={() => router.push('/admin')} style={{
             background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
             padding: '5px 12px', fontSize: '11px'
           }}>Admin</button>
-          <button onClick={handleLogout} style={{
+          <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); router.push('/') }} style={{
             background: 'none', border: 'none', color: 'var(--text-muted)', padding: '5px'
           }}>Logout</button>
         </div>
       </header>
 
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '32px 24px', display: 'grid', gridTemplateColumns: '340px 1fr', gap: '24px', alignItems: 'start' }}>
+      <div style={{ maxWidth: '780px', margin: '0 auto', padding: '36px 24px' }}>
 
-        {/* LEFT — Input Form */}
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '24px', position: 'sticky', top: '76px' }}>
-          <h2 style={{ margin: '0 0 20px', fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Input
-          </h2>
+        {result ? (
+          <div className="fade-up">
 
-          {/* File Upload */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>
-              SEMRUSH CSV
-            </label>
-            <div
-              onClick={() => fileRef.current?.click()}
-              style={{
-                border: `1px dashed ${file ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: '4px', padding: '16px', textAlign: 'center', cursor: 'pointer',
-                background: file ? 'var(--accent-dim)' : 'var(--surface-2)',
-                transition: 'all 0.15s'
-              }}
-            >
-              {file ? (
-                <div>
-                  <div style={{ color: 'var(--accent)', fontSize: '12px', fontWeight: '500' }}>✓ {file.name}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>
-                    {(file.size / 1024).toFixed(0)} KB · Click to change
-                  </div>
+            {/* Stats */}
+            {stats && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+                padding: '16px 24px', marginBottom: '16px',
+                display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px'
+              }}>
+                <StatBadge label="Input keywords" value={stats.total} />
+                <StatBadge label="After vol filter" value={stats.afterVolumeFilter} />
+                <StatBadge label="After dedup" value={stats.afterDedup} />
+                <StatBadge label="Sent to AI" value={stats.sentToAI} accent />
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <button onClick={resetForm} style={{
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
+              }}>← New Analysis</button>
+              <button onClick={handleCopyJSON} style={{
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                color: copied ? 'var(--accent)' : 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
+              }}>{copied ? '✓ Copied' : 'Copy JSON'}</button>
+            </div>
+
+            {/* Primary Keyword */}
+            <div style={{
+              background: 'var(--surface)',
+              border: `1px solid ${result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)'}`,
+              borderRadius: '6px', padding: '20px', marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
+                PRIMARY KEYWORD {result.primary_keyword.validated ? '· ✓ VALIDATED' : '· ⚠ SWAP SUGGESTED'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '18px', fontWeight: '600', color: result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)' }}>
+                  {result.primary_keyword.keyword}
+                </span>
+                <KdTag tag={result.primary_keyword.kd_tag} />
+                <TrendBadge direction={result.primary_keyword.trend_direction} />
+                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>vol {result.primary_keyword.volume?.toLocaleString()}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>kd {result.primary_keyword.kd}</span>
+                {result.primary_keyword.intent && (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{result.primary_keyword.intent}</span>
+                )}
+              </div>
+              {result.primary_keyword.combined_signal && (
+                <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Signal: {result.primary_keyword.combined_signal}
+                </div>
+              )}
+              {result.primary_keyword.note && (
+                <p style={{ margin: '10px 0 0', fontSize: '11px', color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                  {result.primary_keyword.note}
+                </p>
+              )}
+            </div>
+
+            {/* Supporting Keywords */}
+            {result.supporting_keywords?.length > 0 && (
+              <TableSection title="Supporting Keywords" count={result.supporting_keywords.length}>
+                <SupportingTable rows={result.supporting_keywords} />
+              </TableSection>
+            )}
+
+            {/* Longtail Keywords */}
+            {result.longtail_keywords?.length > 0 && (
+              <TableSection title="Longtail Keywords" count={result.longtail_keywords.length}>
+                <LongtailTable rows={result.longtail_keywords} />
+              </TableSection>
+            )}
+
+            {/* Page Strategy Notes */}
+            <div style={{
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+              padding: '20px', marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
+                PAGE STRATEGY NOTES
+              </div>
+              {strategyNotes ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {([
+                    { label: 'Content Format', value: strategyNotes.content_format },
+                    { label: 'Biggest Opportunity', value: strategyNotes.biggest_opportunity },
+                    { label: 'Primary Risk', value: strategyNotes.primary_risk },
+                  ] as { label: string; value: string }[]).map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', letterSpacing: '0.05em' }}>{label.toUpperCase()}</div>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.7' }}>{value}</p>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Upload CSV</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '10px', marginTop: '2px' }}>SEMrush keyword export</div>
-                </div>
+                <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px' }}>{strategyString}</p>
               )}
             </div>
-            <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }}
-              onChange={e => setFile(e.target.files?.[0] ?? null)} />
-          </div>
 
-          {/* Page Type */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>
-              PAGE TYPE
-            </label>
-            <select
-              value={pageType}
-              onChange={e => setPageType(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', color: pageType ? 'var(--text)' : 'var(--text-muted)' }}
-            >
-              <option value="">Select page type...</option>
-              {PAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-
-          {/* Primary Keyword */}
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>
-              PRIMARY KEYWORD
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. video enhancer online"
-              value={primaryKeyword}
-              onChange={e => setPrimaryKeyword(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px' }}
-            />
-          </div>
-
-          {/* Generate Button */}
-          <button
-            onClick={handleGenerate}
-            disabled={!canGenerate}
-            style={{
-              width: '100%', padding: '12px',
-              background: canGenerate ? 'var(--accent)' : 'var(--surface-2)',
-              border: 'none', color: canGenerate ? '#000' : 'var(--text-muted)',
-              fontWeight: '600', fontSize: '13px', letterSpacing: '0.05em',
-              cursor: canGenerate ? 'pointer' : 'not-allowed',
-            }}
-          >
-            {loading ? '...' : 'Generate Strategy →'}
-          </button>
-
-          {/* Helper text */}
-          <p style={{ margin: '12px 0 0', fontSize: '10px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-            Keywords with volume &lt; 30 are automatically removed. Top 300 by volume are sent to AI.
-          </p>
-        </div>
-
-        {/* RIGHT — Results */}
-        <div>
-          {/* Loading State */}
-          {loading && (
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
-              padding: '48px', textAlign: 'center'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
-                {[0, 1, 2].map(i => (
-                  <span key={i} className="pulse" style={{
-                    width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)',
-                    display: 'block', animationDelay: `${i * 0.2}s`
-                  }} />
-                ))}
-              </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>{loadingMsg}</p>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && !loading && (
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--danger)', borderRadius: '6px', padding: '20px'
-            }}>
-              <span style={{ color: 'var(--danger)', fontSize: '12px' }}>✗ Error: {error}</span>
-            </div>
-          )}
-
-          {/* Empty State */}
-          {!loading && !result && !error && (
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
-              padding: '64px', textAlign: 'center'
-            }}>
-              <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
-                Fill in the inputs and click Generate Strategy
-              </p>
-            </div>
-          )}
-
-          {/* Results */}
-          {result && !loading && (
-            <div className="fade-up">
-              {/* Stats bar */}
-              {stats && (
-                <div style={{
-                  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
-                  padding: '16px 24px', marginBottom: '16px',
-                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px'
-                }}>
-                  <StatBadge label="Input keywords" value={stats.total} />
-                  <StatBadge label="After vol filter" value={stats.afterVolumeFilter} />
-                  <StatBadge label="After dedup" value={stats.afterDedup} />
-                  <StatBadge label="Sent to AI" value={stats.sentToAI} />
-                </div>
-              )}
-
-              {/* Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                <button onClick={handleCopyJSON} style={{
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  color: copied ? 'var(--accent)' : 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
-                }}>
-                  {copied ? '✓ Copied' : 'Copy JSON'}
-                </button>
-              </div>
-
-              {/* Primary Keyword */}
+            {/* Competitor Insights (collapsible) */}
+            {result.competitor_insights?.length > 0 && (
               <div style={{
-                background: 'var(--surface)', border: `1px solid ${result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)'}`,
-                borderRadius: '6px', padding: '20px', marginBottom: '16px'
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
               }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
-                  PRIMARY KEYWORD {result.primary_keyword.validated ? '· ✓ VALIDATED' : '· ⚠ SWAP SUGGESTED'}
+                <button onClick={() => setShowCompetitor(!showCompetitor)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>COMPETITOR INSIGHTS ({result.competitor_insights.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showCompetitor ? '▲' : '▼'}</span>
+                </button>
+                {showCompetitor && (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <CompetitorTable rows={result.competitor_insights} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Excluded Keywords (collapsible) */}
+            {result.excluded_keywords?.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowExcluded(!showExcluded)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>EXCLUDED KEYWORDS ({result.excluded_keywords.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showExcluded ? '▲' : '▼'}</span>
+                </button>
+                {showExcluded && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
+                    {result.excluded_keywords.map((kw, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: '16px', padding: '6px 0',
+                        borderBottom: i < result.excluded_keywords.length - 1 ? '1px solid var(--border)' : 'none'
+                      }}>
+                        <span style={{ color: 'var(--text-muted)', minWidth: '180px', fontSize: '12px' }}>{kw.keyword}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px', opacity: 0.7 }}>{kw.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Missing Exports (collapsible) */}
+            {result.missing_exports && result.missing_exports.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--warn)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowMissing(!showMissing)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--warn)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>⚠ MISSING EXPORTS ({result.missing_exports.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showMissing ? '▲' : '▼'}</span>
+                </button>
+                {showMissing && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
+                    {result.missing_exports.map((item, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: '16px', padding: '6px 0',
+                        borderBottom: i < result.missing_exports!.length - 1 ? '1px solid var(--border)' : 'none'
+                      }}>
+                        <span style={{ color: 'var(--warn)', minWidth: '180px', fontSize: '12px', fontWeight: '500' }}>{item.topic}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{item.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        ) : (
+          /* ── Form ── */
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>PAGE TYPE</label>
+                <select value={pageType} onChange={e => setPageType(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', color: pageType ? 'var(--text)' : 'var(--text-muted)' }}>
+                  <option value="">Select page type...</option>
+                  {PAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>PRIMARY KEYWORD</label>
+                <input type="text" placeholder="e.g. video enhancer online" value={primaryKeyword}
+                  onChange={e => setPrimaryKeyword(e.target.value)} style={{ width: '100%', padding: '9px 12px' }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Keyword Files <span style={{ fontWeight: 400, marginLeft: '8px' }}>({sections.length}/{MAX_SECTIONS} sections)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '18px', fontWeight: '600', color: result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)' }}>
-                    {result.primary_keyword.keyword}
-                  </span>
-                  <KdTag tag={result.primary_keyword.kd_tag} />
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>vol {result.primary_keyword.volume.toLocaleString()}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>kd {result.primary_keyword.kd}</span>
-                </div>
-                {result.primary_keyword.note && (
-                  <p style={{ margin: '10px 0 0', fontSize: '11px', color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
-                    {result.primary_keyword.note}
-                  </p>
+                {sections.length < MAX_SECTIONS && (
+                  <button type="button" onClick={addSection} style={{
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    color: 'var(--accent)', fontSize: '11px', padding: '4px 12px',
+                  }}>+ Add Section</button>
                 )}
               </div>
 
-              {/* Supporting Keywords */}
-              <Section title="Supporting Keywords" count={result.supporting_keywords.length}>
-                <Table
-                  rows={result.supporting_keywords}
-                  extraCol={{ header: 'Placement', key: 'content_placement' }}
-                />
-              </Section>
-
-              {/* Longtail Keywords */}
-              <Section title="Longtail Keywords" count={result.longtail_keywords.length}>
-                <Table
-                  rows={result.longtail_keywords}
-                  extraCol={{ header: 'Use Case', key: 'use_case' }}
-                />
-              </Section>
-
-              {/* Page Strategy Notes */}
-              <div style={{
-                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
-                padding: '20px', marginBottom: '16px'
-              }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
-                  PAGE STRATEGY NOTES
-                </div>
-                <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                  {result.page_strategy_notes}
-                </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {sections.map((section, i) => (
+                  <SectionRow
+                    key={section.id} section={section} index={i}
+                    canRemove={sections.length > 1}
+                    inputRef={el => { fileRefs.current[i] = el }}
+                    onLabelChange={label => updateLabel(section.id, label)}
+                    onFileChange={file => updateFile(section.id, file)}
+                    onRemove={() => removeSection(section.id)}
+                  />
+                ))}
               </div>
 
-              {/* Excluded Keywords (collapsible) */}
-              {result.excluded_keywords?.length > 0 && (
-                <div style={{
-                  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden'
-                }}>
-                  <button
-                    onClick={() => setShowExcluded(!showExcluded)}
-                    style={{
-                      width: '100%', background: 'none', border: 'none', padding: '14px 20px',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
-                    }}
-                  >
-                    <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>
-                      EXCLUDED KEYWORDS ({result.excluded_keywords.length})
-                    </span>
-                    <span style={{ fontSize: '11px' }}>{showExcluded ? '▲' : '▼'}</span>
-                  </button>
-                  {showExcluded && (
-                    <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
-                      {result.excluded_keywords.map((kw, i) => (
-                        <div key={i} style={{
-                          display: 'flex', gap: '16px', padding: '6px 0',
-                          borderBottom: i < result.excluded_keywords.length - 1 ? '1px solid var(--border)' : 'none'
-                        }}>
-                          <span style={{ color: 'var(--text-muted)', minWidth: '180px', fontSize: '12px' }}>{kw.keyword}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: '11px', opacity: 0.7 }}>{kw.reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
+                CSV or XLSX from SEMrush, Ahrefs, or similar. Needs Keyword + Volume columns.
+                Pre-filter: removes vol &lt; 30, deduplicates, caps at 300 sent to AI.
+              </p>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
-function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
-      marginBottom: '16px', overflow: 'hidden'
-    }}>
-      <div style={{
-        padding: '14px 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-      }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
-          {title.toUpperCase()}
-        </span>
-        <span style={{
-          background: 'var(--surface-2)', border: '1px solid var(--border)',
-          borderRadius: '3px', padding: '1px 8px', fontSize: '10px', color: 'var(--text-muted)'
-        }}>{count}</span>
-      </div>
-      {children}
-    </div>
-  )
-}
+            {error && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--danger)',
+                borderRadius: '4px', padding: '10px 14px', marginBottom: '16px',
+                color: 'var(--danger)', fontSize: '12px'
+              }}>{error}</div>
+            )}
 
-function Table({ rows, extraCol }: {
-  rows: KeywordResult[]
-  extraCol: { header: string; key: string }
-}) {
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ background: 'var(--surface-2)' }}>
-            {['Keyword', 'Volume', 'KD', 'Tag', extraCol.header].map(h => (
-              <th key={h} style={{
-                padding: '8px 16px', textAlign: 'left', fontSize: '10px',
-                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)'
-              }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((kw, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text)' }}>{kw.keyword}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
-              <td style={{ padding: '10px 16px' }}><KdTag tag={kw.kd_tag} /></td>
-              <td style={{ padding: '10px 16px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '260px' }}>
-                {String(kw[extraCol.key] ?? '')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            <button onClick={handleGenerate} disabled={!canGenerate} style={{
+              width: '100%', padding: '12px',
+              background: canGenerate ? 'var(--accent)' : 'var(--surface-2)',
+              border: canGenerate ? 'none' : '1px solid var(--border)',
+              color: canGenerate ? '#000' : 'var(--text-muted)',
+              fontWeight: '600', fontSize: '13px',
+              cursor: canGenerate ? 'pointer' : 'not-allowed', letterSpacing: '0.02em'
+            }}>
+              {loading ? (
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <span className="pulse">●</span> {loadingMsg}
+                </span>
+              ) : 'Run Keyword Strategy →'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
