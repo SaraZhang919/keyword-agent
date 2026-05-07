@@ -2,7 +2,8 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
-// ─── Types ─────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
+
 type Section = {
   id: number
   label: string
@@ -10,16 +11,47 @@ type Section = {
 }
 
 interface KeywordResult extends Record<string, unknown> {
-  keyword: string; volume: number; kd: number; kd_tag: string
-  content_placement?: string; use_case?: string; note?: string; reason?: string; validated?: boolean
+  keyword: string
+  volume: number
+  kd: number
+  kd_tag: string
+  intent?: string
+  trend_direction?: string
+  cpc?: number
+  density?: number
+  source?: string
+  content_placement?: string
+  flag?: string | null
+  use_case?: string
+  serp_features?: string
+  content_format?: string
+  note?: string
+  reason?: string
+  validated?: boolean
+  combined_signal?: string
+  competitor_brand?: string | null
+  opportunity?: string
+}
+
+interface PageStrategyNotes {
+  content_format: string
+  biggest_opportunity: string
+  primary_risk: string
+}
+
+interface MissingExport {
+  topic: string
+  reason: string
 }
 
 interface StrategyResult {
   primary_keyword: KeywordResult & { validated: boolean; note: string }
   supporting_keywords: KeywordResult[]
   longtail_keywords: KeywordResult[]
+  competitor_insights: KeywordResult[]
   excluded_keywords: KeywordResult[]
-  page_strategy_notes: string
+  missing_exports?: MissingExport[]
+  page_strategy_notes: PageStrategyNotes | string
 }
 
 interface Stats {
@@ -27,7 +59,7 @@ interface Stats {
   afterVolumeFilter: number
   afterDedup: number
   sentToAI: number
-  bySource: Record<string, number>
+  bySource?: Record<string, number>
 }
 
 const MAX_SECTIONS = 5
@@ -40,7 +72,7 @@ const PAGE_TYPES = [
   'Docs Page',
 ]
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function KdTag({ tag }: { tag: string }) {
   const cls = tag === 'Priority' ? 'tag-priority' : tag === 'Mid-term' ? 'tag-midterm' : 'tag-longterm'
@@ -54,6 +86,13 @@ function KdTag({ tag }: { tag: string }) {
   )
 }
 
+function TrendBadge({ direction }: { direction?: string }) {
+  if (!direction) return null
+  const color = direction === 'Rising' ? 'var(--accent)' : direction === 'Declining' ? 'var(--danger)' : 'var(--text-muted)'
+  const arrow = direction === 'Rising' ? '↑' : direction === 'Declining' ? '↓' : '→'
+  return <span style={{ color, fontSize: '10px' }}>{arrow} {direction}</span>
+}
+
 function StatBadge({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
   return (
     <div style={{ textAlign: 'center' }}>
@@ -61,17 +100,6 @@ function StatBadge({ label, value, accent }: { label: string; value: number; acc
         {value.toLocaleString()}
       </div>
       <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{label}</div>
-    </div>
-  )
-}
-
-function Label({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div style={{
-      fontSize: '10px', letterSpacing: '0.1em', color: 'var(--text-muted)',
-      marginBottom: '8px', textTransform: 'uppercase', ...style
-    }}>
-      {children}
     </div>
   )
 }
@@ -89,22 +117,12 @@ function SectionRow({
 }) {
   return (
     <div style={{
-      display: 'grid',
-      gridTemplateColumns: '200px 1fr auto',
-      gap: '10px',
-      alignItems: 'center',
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: '4px',
-      padding: '12px 14px',
+      display: 'grid', gridTemplateColumns: '200px 1fr auto', gap: '10px',
+      alignItems: 'center', background: 'var(--surface)',
+      border: '1px solid var(--border)', borderRadius: '4px', padding: '12px 14px',
     }}>
-      <input
-        type="text"
-        value={section.label}
-        onChange={e => onLabelChange(e.target.value)}
-        placeholder={`Section ${index + 1} name`}
-        style={{ padding: '7px 10px', fontSize: '12px' }}
-      />
+      <input type="text" value={section.label} onChange={e => onLabelChange(e.target.value)}
+        placeholder={`Section ${index + 1} name`} style={{ padding: '7px 10px', fontSize: '12px' }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <label style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -114,13 +132,8 @@ function SectionRow({
         }}>
           <span>↑</span>
           {section.file ? 'Change file' : 'Upload CSV / XLSX'}
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            style={{ display: 'none' }}
-            onChange={e => onFileChange(e.target.files?.[0] ?? null)}
-          />
+          <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
+            onChange={e => onFileChange(e.target.files?.[0] ?? null)} />
         </label>
         {section.file && (
           <span style={{ fontSize: '11px', color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -128,25 +141,16 @@ function SectionRow({
           </span>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        disabled={!canRemove}
-        title="Remove section"
-        style={{
-          background: 'none', border: 'none',
-          color: canRemove ? 'var(--text-muted)' : 'transparent',
-          fontSize: '16px', cursor: canRemove ? 'pointer' : 'default',
-          padding: '2px 4px', lineHeight: 1,
-        }}
-      >
-        ×
-      </button>
+      <button type="button" onClick={onRemove} disabled={!canRemove} style={{
+        background: 'none', border: 'none',
+        color: canRemove ? 'var(--text-muted)' : 'transparent',
+        fontSize: '16px', cursor: canRemove ? 'pointer' : 'default', padding: '2px 4px', lineHeight: 1,
+      }}>×</button>
     </div>
   )
 }
 
-function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+function TableSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
     <div style={{
       background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
@@ -156,9 +160,7 @@ function Section({ title, count, children }: { title: string; count: number; chi
         padding: '14px 20px', borderBottom: '1px solid var(--border)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
-          {title.toUpperCase()}
-        </span>
+        <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em' }}>{title.toUpperCase()}</span>
         <span style={{
           background: 'var(--surface-2)', border: '1px solid var(--border)',
           borderRadius: '3px', padding: '1px 8px', fontSize: '10px', color: 'var(--text-muted)'
@@ -169,20 +171,17 @@ function Section({ title, count, children }: { title: string; count: number; chi
   )
 }
 
-function Table({ rows, extraCol }: {
-  rows: KeywordResult[]
-  extraCol: { header: string; key: string }
-}) {
+function SupportingTable({ rows }: { rows: KeywordResult[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)' }}>
-            {['Keyword', 'Volume', 'KD', 'Tag', extraCol.header].map(h => (
+            {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'Intent', 'Placement', 'Flag'].map(h => (
               <th key={h} style={{
-                padding: '8px 16px', textAlign: 'left', fontSize: '10px',
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
                 color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)'
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
               }}>{h}</th>
             ))}
           </tr>
@@ -190,13 +189,14 @@ function Table({ rows, extraCol }: {
         <tbody>
           {rows.map((kw, i) => (
             <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text)' }}>{kw.keyword}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
-              <td style={{ padding: '10px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
-              <td style={{ padding: '10px 16px' }}><KdTag tag={kw.kd_tag} /></td>
-              <td style={{ padding: '10px 16px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '260px' }}>
-                {String(kw[extraCol.key] ?? '')}
-              </td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
+              <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.intent}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '200px' }}>{kw.content_placement}</td>
+              <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--warn)', maxWidth: '160px' }}>{kw.flag}</td>
             </tr>
           ))}
         </tbody>
@@ -205,7 +205,73 @@ function Table({ rows, extraCol }: {
   )
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
+function LongtailTable({ rows }: { rows: KeywordResult[] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'SERP', 'Content Format', 'Use Case'].map(h => (
+              <th key={h} style={{
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
+                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((kw, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
+              <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.serp_features}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.content_format}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.use_case}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--surface-2)' }}>
+            {['Keyword', 'Vol', 'KD', 'Competitor Brand', 'Opportunity'].map(h => (
+              <th key={h} style={{
+                padding: '8px 12px', textAlign: 'left', fontSize: '10px',
+                color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
+                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((kw, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.competitor_brand ?? '—'}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '240px' }}>{kw.opportunity}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function ToolPage() {
   const router = useRouter()
   const fileRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -224,13 +290,13 @@ export default function ToolPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [error, setError] = useState('')
   const [showExcluded, setShowExcluded] = useState(false)
+  const [showCompetitor, setShowCompetitor] = useState(false)
+  const [showMissing, setShowMissing] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // ── Section management ──────────────────────────────────────────────────
   function addSection() {
     if (sections.length >= MAX_SECTIONS) return
-    const newId = Date.now()
-    setSections(prev => [...prev, { id: newId, label: `Section ${prev.length + 1}`, file: null }])
+    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null }])
   }
 
   function removeSection(id: number) {
@@ -245,7 +311,6 @@ export default function ToolPage() {
     setSections(prev => prev.map(s => s.id === id ? { ...s, file } : s))
   }
 
-  // ── Submit ──────────────────────────────────────────────────────────────
   async function handleGenerate() {
     const filledSections = sections.filter(s => s.file)
     if (filledSections.length === 0 || !pageType || !primaryKeyword) return
@@ -254,23 +319,14 @@ export default function ToolPage() {
     setError('')
     setResult(null)
 
-    const msgs = [
-      'Parsing files...',
-      'Pre-filtering keywords...',
-      'Sending to AI...',
-      'Building keyword strategy...',
-    ]
+    const msgs = ['Parsing files...', 'Pre-filtering keywords...', 'Sending to AI...', 'Building keyword strategy...']
     let i = 0
     setLoadingMsg(msgs[0])
-    const interval = setInterval(() => {
-      i = (i + 1) % msgs.length
-      setLoadingMsg(msgs[i])
-    }, 2000)
+    const interval = setInterval(() => { i = (i + 1) % msgs.length; setLoadingMsg(msgs[i]) }, 2000)
 
     const formData = new FormData()
     formData.append('pageType', pageType)
     formData.append('primaryKeyword', primaryKeyword.trim())
-
     for (const section of sections) {
       if (!section.file) continue
       const key = section.label.toLowerCase().replace(/\s+/g, '_')
@@ -301,16 +357,18 @@ export default function ToolPage() {
   }
 
   function resetForm() {
-    setResult(null)
-    setStats(null)
-    setError('')
+    setResult(null); setStats(null); setError('')
     setSections(prev => prev.map(s => ({ ...s, file: null })))
     fileRefs.current.forEach(ref => { if (ref) ref.value = '' })
   }
 
   const canGenerate = sections.some(s => s.file) && !!pageType && !!primaryKeyword && !loading
 
-  // ── Render ──────────────────────────────────────────────────────────────
+  const strategyNotes = result && typeof result.page_strategy_notes === 'object'
+    ? result.page_strategy_notes as PageStrategyNotes : null
+  const strategyString = result && typeof result.page_strategy_notes === 'string'
+    ? result.page_strategy_notes : null
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
@@ -326,7 +384,7 @@ export default function ToolPage() {
           <span style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: '3px', padding: '2px 8px', fontSize: '10px', color: 'var(--text-muted)'
-          }}>v1</span>
+          }}>v2</span>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <button onClick={() => router.push('/admin')} style={{
@@ -342,9 +400,9 @@ export default function ToolPage() {
       <div style={{ maxWidth: '780px', margin: '0 auto', padding: '36px 24px' }}>
 
         {result ? (
-          /* ── Results ── */
           <div className="fade-up">
-            {/* Stats bar */}
+
+            {/* Stats */}
             {stats && (
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
@@ -367,14 +425,13 @@ export default function ToolPage() {
               <button onClick={handleCopyJSON} style={{
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 color: copied ? 'var(--accent)' : 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
-              }}>
-                {copied ? '✓ Copied' : 'Copy JSON'}
-              </button>
+              }}>{copied ? '✓ Copied' : 'Copy JSON'}</button>
             </div>
 
             {/* Primary Keyword */}
             <div style={{
-              background: 'var(--surface)', border: `1px solid ${result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)'}`,
+              background: 'var(--surface)',
+              border: `1px solid ${result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)'}`,
               borderRadius: '6px', padding: '20px', marginBottom: '16px'
             }}>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
@@ -385,9 +442,18 @@ export default function ToolPage() {
                   {result.primary_keyword.keyword}
                 </span>
                 <KdTag tag={result.primary_keyword.kd_tag} />
+                <TrendBadge direction={result.primary_keyword.trend_direction} />
                 <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>vol {result.primary_keyword.volume?.toLocaleString()}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>kd {result.primary_keyword.kd}</span>
+                {result.primary_keyword.intent && (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{result.primary_keyword.intent}</span>
+                )}
               </div>
+              {result.primary_keyword.combined_signal && (
+                <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Signal: {result.primary_keyword.combined_signal}
+                </div>
+              )}
               {result.primary_keyword.note && (
                 <p style={{ margin: '10px 0 0', fontSize: '11px', color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
                   {result.primary_keyword.note}
@@ -396,14 +462,18 @@ export default function ToolPage() {
             </div>
 
             {/* Supporting Keywords */}
-            <Section title="Supporting Keywords" count={result.supporting_keywords.length}>
-              <Table rows={result.supporting_keywords} extraCol={{ header: 'Placement', key: 'content_placement' }} />
-            </Section>
+            {result.supporting_keywords?.length > 0 && (
+              <TableSection title="Supporting Keywords" count={result.supporting_keywords.length}>
+                <SupportingTable rows={result.supporting_keywords} />
+              </TableSection>
+            )}
 
             {/* Longtail Keywords */}
-            <Section title="Longtail Keywords" count={result.longtail_keywords.length}>
-              <Table rows={result.longtail_keywords} extraCol={{ header: 'Use Case', key: 'use_case' }} />
-            </Section>
+            {result.longtail_keywords?.length > 0 && (
+              <TableSection title="Longtail Keywords" count={result.longtail_keywords.length}>
+                <LongtailTable rows={result.longtail_keywords} />
+              </TableSection>
+            )}
 
             {/* Page Strategy Notes */}
             <div style={{
@@ -413,27 +483,58 @@ export default function ToolPage() {
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
                 PAGE STRATEGY NOTES
               </div>
-              <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px' }}>
-                {result.page_strategy_notes}
-              </p>
+              {strategyNotes ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {([
+                    { label: 'Content Format', value: strategyNotes.content_format },
+                    { label: 'Biggest Opportunity', value: strategyNotes.biggest_opportunity },
+                    { label: 'Primary Risk', value: strategyNotes.primary_risk },
+                  ] as { label: string; value: string }[]).map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', letterSpacing: '0.05em' }}>{label.toUpperCase()}</div>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.7' }}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px' }}>{strategyString}</p>
+              )}
             </div>
 
-            {/* Excluded Keywords */}
+            {/* Competitor Insights (collapsible) */}
+            {result.competitor_insights?.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowCompetitor(!showCompetitor)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>COMPETITOR INSIGHTS ({result.competitor_insights.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showCompetitor ? '▲' : '▼'}</span>
+                </button>
+                {showCompetitor && (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <CompetitorTable rows={result.competitor_insights} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Excluded Keywords (collapsible) */}
             {result.excluded_keywords?.length > 0 && (
               <div style={{
-                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden'
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button
-                  onClick={() => setShowExcluded(!showExcluded)}
-                  style={{
-                    width: '100%', background: 'none', border: 'none', padding: '14px 20px',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
-                  }}
-                >
-                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>
-                    EXCLUDED KEYWORDS ({result.excluded_keywords.length})
-                  </span>
+                <button onClick={() => setShowExcluded(!showExcluded)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>EXCLUDED KEYWORDS ({result.excluded_keywords.length})</span>
                   <span style={{ fontSize: '11px' }}>{showExcluded ? '▲' : '▼'}</span>
                 </button>
                 {showExcluded && (
@@ -451,67 +552,74 @@ export default function ToolPage() {
                 )}
               </div>
             )}
+
+            {/* Missing Exports (collapsible) */}
+            {result.missing_exports && result.missing_exports.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--warn)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowMissing(!showMissing)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--warn)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>⚠ MISSING EXPORTS ({result.missing_exports.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showMissing ? '▲' : '▼'}</span>
+                </button>
+                {showMissing && (
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
+                    {result.missing_exports.map((item, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: '16px', padding: '6px 0',
+                        borderBottom: i < result.missing_exports!.length - 1 ? '1px solid var(--border)' : 'none'
+                      }}>
+                        <span style={{ color: 'var(--warn)', minWidth: '180px', fontSize: '12px', fontWeight: '500' }}>{item.topic}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{item.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         ) : (
           /* ── Form ── */
           <div>
-            {/* Row: Page type + Primary keyword */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px' }}>
               <div>
-                <Label>Page Type</Label>
-                <select
-                  value={pageType}
-                  onChange={e => setPageType(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', color: pageType ? 'var(--text)' : 'var(--text-muted)' }}
-                >
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>PAGE TYPE</label>
+                <select value={pageType} onChange={e => setPageType(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', color: pageType ? 'var(--text)' : 'var(--text-muted)' }}>
                   <option value="">Select page type...</option>
                   {PAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <Label>Primary Keyword</Label>
-                <input
-                  type="text"
-                  placeholder="e.g. video enhancer online"
-                  value={primaryKeyword}
-                  onChange={e => setPrimaryKeyword(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px' }}
-                />
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>PRIMARY KEYWORD</label>
+                <input type="text" placeholder="e.g. video enhancer online" value={primaryKeyword}
+                  onChange={e => setPrimaryKeyword(e.target.value)} style={{ width: '100%', padding: '9px 12px' }} />
               </div>
             </div>
 
-            {/* Keyword Sections */}
             <div style={{ marginBottom: '20px' }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                marginBottom: '14px'
-              }}>
-                <Label style={{ margin: 0 }}>
-                  Keyword Files
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '8px' }}>
-                    ({sections.length}/{MAX_SECTIONS} sections)
-                  </span>
-                </Label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Keyword Files <span style={{ fontWeight: 400, marginLeft: '8px' }}>({sections.length}/{MAX_SECTIONS} sections)</span>
+                </div>
                 {sections.length < MAX_SECTIONS && (
-                  <button
-                    type="button"
-                    onClick={addSection}
-                    style={{
-                      background: 'var(--surface)', border: '1px solid var(--border)',
-                      color: 'var(--accent)', fontSize: '11px', padding: '4px 12px',
-                    }}
-                  >
-                    + Add Section
-                  </button>
+                  <button type="button" onClick={addSection} style={{
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    color: 'var(--accent)', fontSize: '11px', padding: '4px 12px',
+                  }}>+ Add Section</button>
                 )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {sections.map((section, i) => (
                   <SectionRow
-                    key={section.id}
-                    section={section}
-                    index={i}
+                    key={section.id} section={section} index={i}
                     canRemove={sections.length > 1}
                     inputRef={el => { fileRefs.current[i] = el }}
                     onLabelChange={label => updateLabel(section.id, label)}
@@ -532,31 +640,22 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--danger)',
                 borderRadius: '4px', padding: '10px 14px', marginBottom: '16px',
                 color: 'var(--danger)', fontSize: '12px'
-              }}>
-                {error}
-              </div>
+              }}>{error}</div>
             )}
 
-            <button
-              onClick={handleGenerate}
-              disabled={!canGenerate}
-              style={{
-                width: '100%', padding: '12px',
-                background: canGenerate ? 'var(--accent)' : 'var(--surface-2)',
-                border: canGenerate ? 'none' : '1px solid var(--border)',
-                color: canGenerate ? '#000' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '13px',
-                cursor: canGenerate ? 'pointer' : 'not-allowed',
-                letterSpacing: '0.02em'
-              }}
-            >
+            <button onClick={handleGenerate} disabled={!canGenerate} style={{
+              width: '100%', padding: '12px',
+              background: canGenerate ? 'var(--accent)' : 'var(--surface-2)',
+              border: canGenerate ? 'none' : '1px solid var(--border)',
+              color: canGenerate ? '#000' : 'var(--text-muted)',
+              fontWeight: '600', fontSize: '13px',
+              cursor: canGenerate ? 'pointer' : 'not-allowed', letterSpacing: '0.02em'
+            }}>
               {loading ? (
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                   <span className="pulse">●</span> {loadingMsg}
                 </span>
-              ) : (
-                'Run Keyword Strategy →'
-              )}
+              ) : 'Run Keyword Strategy →'}
             </button>
           </div>
         )}
