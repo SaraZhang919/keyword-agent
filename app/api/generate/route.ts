@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseCSV, preFilter, formatForAI } from '@/lib/prefilter'
+import { fileToRows, parseRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 export async function POST(request: NextRequest) {
@@ -18,12 +18,14 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Stage 1: Parse + Pre-filter ---
-    const csvText = await file.text()
-    const { rows, error: parseError } = parseCSV(csvText)
-    if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
-    if (rows.length === 0) return NextResponse.json({ error: 'No keywords found in CSV' }, { status: 400 })
+    const { rows: rawRows, error: fileError } = await fileToRows(file)
+    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
 
-    const { filtered, stats } = preFilter(rows)
+    const { rows, error: parseError } = parseRows(rawRows, 'Uploaded File')
+    if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
+    if (rows.length === 0) return NextResponse.json({ error: 'No keywords found in file' }, { status: 400 })
+
+    const { filtered, stats } = mergeAndFilter(rows)
     if (filtered.length === 0) {
       return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
@@ -48,7 +50,6 @@ export async function POST(request: NextRequest) {
 
     // --- Stage 2: OpenAI API ---
     const keywordList = formatForAI(filtered)
-
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -80,7 +81,6 @@ export async function POST(request: NextRequest) {
 
     const openaiData = await openaiRes.json()
     const rawText = openaiData.choices?.[0]?.message?.content ?? ''
-
     const jsonText = rawText.replace(/```json|```/g, '').trim()
     const result = JSON.parse(jsonText)
 
