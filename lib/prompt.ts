@@ -51,6 +51,36 @@ IMPORTANT:
 - For informational longtails, SERP opportunities like Featured Snippet, AI Overview, and People Also Ask can outweigh slightly worse KD.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ADJACENT INTENT / OUTCOME MATCH RULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Some keywords do not exactly match the core product wording,
+but still describe the same user outcome or a very close workflow.
+
+Examples of adjacent intent for AI video/image tools:
+- converter
+- upscale / upscaler
+- resolution
+- quality
+- HD / 4K / 1080p
+- enhance / improvement
+- sharpen / restore
+
+Rules:
+- Do NOT exclude a keyword only because it uses "converter" instead of "enhancer"
+- Include adjacent-intent keywords when the user outcome matches the product capability
+- Treat "convert to 1080p", "4k video converter", "4k resolution converter",
+  and similar terms as valid opportunities if the page can satisfy the outcome
+- Prefer keywords that reflect the same user goal, even if the wording differs
+- Exclude only when the keyword clearly belongs to a different product class,
+  such as downloader, streaming, codec pack, torrent, or hardware-only terms
+
+Important:
+- Intent fit still matters most
+- But adjacent-intent keywords should be considered strategically valuable,
+  not automatically rejected
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SOURCE TYPES — HOW TO USE EACH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -315,6 +345,9 @@ RULE 7 — CLUSTER COVERAGE:
   - comparison/alternative term
 
   Avoid over-concentrating on only one modifier pattern.
+  
+- Allow similar keywords only if search intent materially differs.
+- Adjacent-intent keywords are allowed if they match the same user outcome, even when the wording differs from the core product term.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — LONGTAIL KEYWORDS (5–15)
@@ -363,6 +396,7 @@ SEMANTIC DUPLICATE RULE:
     2. volume
     3. KD
 - Allow similar keywords only if search intent materially differs.
+- Adjacent-intent keywords are allowed if they match the same user outcome, even when the wording differs from the core product term.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4 — COMPETITOR INSIGHTS
@@ -404,7 +438,7 @@ Examples:
   → SERP dominated by video/shopping for text page: "wrong content format"
   → Long-term (KD>80): "too competitive for DA<30"
   → Mid-term + density>0.5: "double competition"
-  → Irrelevant to product: "different use case"
+  → Irrelevant to product: "different use case or non-overlapping outcome"
   → KD=0 anomaly excluded: "emerging query, unverified difficulty"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
