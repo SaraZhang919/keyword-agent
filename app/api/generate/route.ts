@@ -1,96 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fileToRows, parseRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
+import { parseCSV, preFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const pageType       = formData.get('pageType') as string
+    const file = formData.get('file') as File | null
+    const pageType = formData.get('pageType') as string
     const primaryKeyword = formData.get('primaryKeyword') as string
 
-    if (!pageType || !primaryKeyword) {
-      return NextResponse.json({ error: 'Page type and primary keyword are required.' }, { status: 400 })
+    if (!file || !pageType || !primaryKeyword) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
-    // --- Parse all files ---
-    const allRows: ReturnType<typeof parseRows>['rows'] = []
-    const MAX_PER_SECTION = 3
+    // --- Stage 1: Parse + Pre-filter ---
+    const csvText = await file.text()
+    const { rows, error: parseError } = parseCSV(csvText)
+    if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
+    if (rows.length === 0) return NextResponse.json({ error: 'No keywords found in CSV' }, { status: 400 })
 
-    // Topic files
-    let hasTopicFile = false
-    for (let i = 0; i < MAX_PER_SECTION; i++) {
-      const file = formData.get(`topicFile_${i}`) as File | null
-      if (!file) continue
-      hasTopicFile = true
-      const raw = await fileToRows(file)
-      if (raw.error) return NextResponse.json({ error: raw.error }, { status: 400 })
-      const parsed = parseRows(raw.rows, 'topic')
-      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
-      allRows.push(...parsed.rows)
-    }
-
-    if (!hasTopicFile) {
-      return NextResponse.json({ error: 'At least one Topic keyword file is required.' }, { status: 400 })
-    }
-
-    // Related files
-    for (let i = 0; i < MAX_PER_SECTION; i++) {
-      const file = formData.get(`relatedFile_${i}`) as File | null
-      if (!file) continue
-      const raw = await fileToRows(file)
-      if (raw.error) return NextResponse.json({ error: raw.error }, { status: 400 })
-      const parsed = parseRows(raw.rows, 'related')
-      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
-      allRows.push(...parsed.rows)
-    }
-
-    // Competitor files
-    for (let i = 0; i < MAX_PER_SECTION; i++) {
-      const file = formData.get(`competitorFile_${i}`) as File | null
-      if (!file) continue
-      const raw = await fileToRows(file)
-      if (raw.error) return NextResponse.json({ error: raw.error }, { status: 400 })
-      const parsed = parseRows(raw.rows, 'competitor')
-      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
-      allRows.push(...parsed.rows)
-    }
-
-    if (allRows.length === 0) {
-      return NextResponse.json({ error: 'No keywords found in uploaded files.' }, { status: 400 })
-    }
-
-    // --- Merge + pre-filter ---
-    const { filtered, stats } = mergeAndFilter(allRows)
+    const { filtered, stats } = preFilter(rows)
     if (filtered.length === 0) {
-      return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30).' }, { status: 400 })
+      return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
 
-    // --- Get prompt ---
-    let systemPrompt = DEFAULT_PROMPT
+    // --- Get prompt (from KV if available, else default) ---
+    let prompt = DEFAULT_PROMPT
     try {
-      const { Redis } = await import('@upstash/redis')
-      const kv = new Redis({
-        url: process.env.KV_REST_API_URL!,
-        token: process.env.KV_REST_API_TOKEN!,
-      })
+      const { kv } = await import('@vercel/kv')
       const saved = await kv.get<string>('keyword-strategy-prompt')
-      if (saved) systemPrompt = saved
-    } catch { /* KV not configured */ }
+      if (saved) prompt = saved
+    } catch {
+      // KV not configured, use default prompt
+    }
 
-    const finalPrompt = systemPrompt
+    const finalPrompt = prompt
       .replace('{{PAGE_TYPE}}', pageType)
       .replace('{{PRIMARY_KEYWORD}}', primaryKeyword)
 
-    // --- OpenAI API ---
+    // --- Stage 2: OpenAI API ---
     const keywordList = formatForAI(filtered)
-    const sourceBreakdown = [
-      `${stats.topic} topic`,
-      stats.related > 0 ? `${stats.related} related` : null,
-      stats.competitor > 0 ? `${stats.competitor} competitor` : null,
-    ].filter(Boolean).join(' + ')
 
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -101,12 +54,15 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4000,
-        response_format: { type: 'json_object' },
+        response_format: { type: 'json_object' }, // enforces JSON output — no markdown fences
         messages: [
-          { role: 'system', content: finalPrompt },
+          {
+            role: 'system',
+            content: finalPrompt,
+          },
           {
             role: 'user',
-            content: `Keyword list: ${filtered.length} keywords (${sourceBreakdown}, filtered from ${stats.total} total, ${stats.brandTerms} brand terms included for competitor_insights):\n\n${keywordList}`
+            content: `Keyword list (${filtered.length} keywords after pre-filtering ${stats.total} total):\n\n${keywordList}`,
           },
         ],
       }),
@@ -114,12 +70,14 @@ export async function POST(request: NextRequest) {
 
     if (!openaiRes.ok) {
       const err = await openaiRes.text()
-      console.error('OpenAI error:', err)
+      console.error('OpenAI API error:', err)
       return NextResponse.json({ error: 'OpenAI API call failed' }, { status: 500 })
     }
 
     const openaiData = await openaiRes.json()
     const rawText = openaiData.choices?.[0]?.message?.content ?? ''
+
+    // Strip any accidental markdown fences (safety net)
     const jsonText = rawText.replace(/```json|```/g, '').trim()
     const result = JSON.parse(jsonText)
 
