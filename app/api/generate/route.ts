@@ -31,7 +31,11 @@ export async function POST(request: NextRequest) {
     // --- Get prompt (from KV if available, else default) ---
     let prompt = DEFAULT_PROMPT
     try {
-      const { kv } = await import('@upstash/redis')
+      const { Redis } = await import('@upstash/redis')
+      const kv = new Redis({
+        url: process.env.KV_REST_API_URL!,
+        token: process.env.KV_REST_API_TOKEN!,
+      })
       const saved = await kv.get<string>('keyword-strategy-prompt')
       if (saved) prompt = saved
     } catch {
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4000,
-        response_format: { type: 'json_object' }, // enforces JSON output — no markdown fences
+        response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
@@ -77,7 +81,6 @@ export async function POST(request: NextRequest) {
     const openaiData = await openaiRes.json()
     const rawText = openaiData.choices?.[0]?.message?.content ?? ''
 
-    // Strip any accidental markdown fences (safety net)
     const jsonText = rawText.replace(/```json|```/g, '').trim()
     const result = JSON.parse(jsonText)
 
