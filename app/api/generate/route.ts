@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     // --- Get prompt (from KV if available, else default) ---
     let prompt = DEFAULT_PROMPT
     try {
-      const { kv } = await import('@vercel/kv')
+      const { kv } = await import('@upstash/redis')
       const saved = await kv.get<string>('keyword-strategy-prompt')
       if (saved) prompt = saved
     } catch {
