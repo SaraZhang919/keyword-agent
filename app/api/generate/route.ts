@@ -5,11 +5,10 @@ import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const file = formData.get('file') as File | null
     const pageType = formData.get('pageType') as string
     const primaryKeyword = formData.get('primaryKeyword') as string
 
-    if (!file || !pageType || !primaryKeyword) {
+    if (!pageType || !primaryKeyword) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -17,15 +16,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
-    // --- Stage 1: Parse + Pre-filter ---
-    const { rows: rawRows, error: fileError } = await fileToRows(file)
-    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
+    // --- Stage 1: Collect all sections (topic_keywords_file, related_keywords_file, etc.) ---
+    const allRows: Awaited<ReturnType<typeof parseRows>>['rows'] = []
+    const entries = Array.from(formData.entries())
+    const fileEntries = entries.filter(([key]) => key.endsWith('_file'))
 
-    const { rows, error: parseError } = parseRows(rawRows, 'Uploaded File')
-    if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
-    if (rows.length === 0) return NextResponse.json({ error: 'No keywords found in file' }, { status: 400 })
+    if (fileEntries.length === 0) {
+      return NextResponse.json({ error: 'Please upload at least one keyword file.' }, { status: 400 })
+    }
 
-    const { filtered, stats } = mergeAndFilter(rows)
+    for (const [key, value] of fileEntries) {
+      const file = value as File
+      const labelKey = key.replace('_file', '_label')
+      const label = (formData.get(labelKey) as string) || key.replace('_file', '').replace(/_/g, ' ')
+
+      const { rows: rawRows, error: fileError } = await fileToRows(file)
+      if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
+
+      const { rows, error: parseError } = parseRows(rawRows, label)
+      if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
+
+      allRows.push(...rows)
+    }
+
+    if (allRows.length === 0) {
+      return NextResponse.json({ error: 'No keywords found in uploaded files' }, { status: 400 })
+    }
+
+    const { filtered, stats } = mergeAndFilter(allRows)
     if (filtered.length === 0) {
       return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
@@ -61,10 +79,7 @@ export async function POST(request: NextRequest) {
         max_tokens: 4000,
         response_format: { type: 'json_object' },
         messages: [
-          {
-            role: 'system',
-            content: finalPrompt,
-          },
+          { role: 'system', content: finalPrompt },
           {
             role: 'user',
             content: `Keyword list (${filtered.length} keywords after pre-filtering ${stats.total} total):\n\n${keywordList}`,
