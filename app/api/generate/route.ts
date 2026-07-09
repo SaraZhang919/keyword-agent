@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, parseRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
+function extractJsonObject(text: string): string | null {
+  const cleaned = text.replace(/```json|```/g, '').trim()
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+  return cleaned.slice(start, end + 1)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4000,
+        max_tokens: 8000,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: finalPrompt },
@@ -95,9 +103,33 @@ export async function POST(request: NextRequest) {
     }
 
     const openaiData = await openaiRes.json()
+    const finishReason = openaiData.choices?.[0]?.finish_reason
     const rawText = openaiData.choices?.[0]?.message?.content ?? ''
-    const jsonText = rawText.replace(/```json|```/g, '').trim()
-    const result = JSON.parse(jsonText)
+    const jsonText = extractJsonObject(rawText)
+
+    if (!jsonText || finishReason === 'length') {
+      console.error('OpenAI returned incomplete JSON:', {
+        finishReason,
+        preview: rawText.slice(0, 500),
+      })
+      return NextResponse.json({
+        error: 'AI response was incomplete. Try a smaller upload or run again.',
+      }, { status: 500 })
+    }
+
+    let result: unknown
+    try {
+      result = JSON.parse(jsonText)
+    } catch (parseError) {
+      console.error('Could not parse OpenAI JSON:', {
+        parseError,
+        finishReason,
+        preview: rawText.slice(0, 500),
+      })
+      return NextResponse.json({
+        error: 'AI returned invalid JSON. Please run the analysis again.',
+      }, { status: 500 })
+    }
 
     return NextResponse.json({ result, stats: { ...stats, sentToAI: filtered.length } })
   } catch (err) {
