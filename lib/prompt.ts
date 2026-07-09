@@ -495,18 +495,18 @@ Answer exactly 3 questions:
 STEP 8 — NEW PAGE OPPORTUNITIES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-After optimizing the current page, scan the remaining keyword set for distinct clusters that should become separate pages.
+After optimizing the current page, independently scan the full uploaded keyword set for distinct clusters that should become separate pages.
 
 Purpose:
 - Keep the original page optimization first.
-- Then recommend whole new page ideas that should NOT be forced into the current page.
-- These are discovery opportunities for future content, feature, tool, comparison, or use-case pages.
+- Then recommend whole new page ideas from the whole keyword universe, not only leftovers from the current page analysis.
+- These are discovery opportunities for future content, feature, tool, comparison, GEO, or use-case pages.
 
 Recommend a new page only when:
-- The keyword cluster has a different intent, task, audience, format, platform, or product function than the current page.
+- The keyword cluster has a clear shared topic, intent, task, audience, format, platform, location/GEO pattern, or product function.
 - The page can satisfy a clear search need on its own.
 - The cluster has enough evidence from provided keywords to justify a separate URL.
-- It is not merely a synonym or supporting keyword for the current page.
+- It is not merely a duplicate wording pattern of another recommended new page.
 
 Page types to use:
 - Blog Post
@@ -514,13 +514,14 @@ Page types to use:
 - Online Tool Page
 - Comparison Page
 - Use-case Page
+- GEO Page
 - Template/Resource Page
 - Docs Page
 
 For each opportunity:
 - Use the best provided keyword as primary_keyword.
 - Include 2 to 5 provided supporting keywords when available.
-- Explain why this deserves a new page instead of being placed on the current page.
+- Explain why this keyword cluster deserves its own page.
 - Translate the keyword pattern into a product_or_function_idea when there is a clear user job.
 - Mark priority as High, Medium, or Low based on intent fit, volume signal, KD realism, commercial value, and content feasibility.
 
@@ -635,7 +636,7 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
   "new_page_opportunities": [
     {
       "page_title": "string",
-      "page_type": "Blog Post | Feature Page | Online Tool Page | Comparison Page | Use-case Page | Template/Resource Page | Docs Page",
+      "page_type": "Blog Post | Feature Page | Online Tool Page | Comparison Page | Use-case Page | GEO Page | Template/Resource Page | Docs Page",
       "primary_keyword": "string",
       "primary_keyword_volume": 0,
       "primary_keyword_kd": 0,
