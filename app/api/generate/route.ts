@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const pageType = formData.get('pageType') as string
     const primaryKeyword = formData.get('primaryKeyword') as string
+    const targetAudience = (formData.get('targetAudience') as string) || 'All / Undefined'
 
     if (!pageType || !primaryKeyword) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
     const finalPrompt = prompt
       .replace('{{PAGE_TYPE}}', pageType)
       .replace('{{PRIMARY_KEYWORD}}', primaryKeyword)
+      .replace('{{TARGET_AUDIENCE}}', targetAudience)
 
     // --- Stage 2: OpenAI API ---
     const keywordList = formatForAI(filtered)

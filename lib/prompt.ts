@@ -27,6 +27,12 @@ Each keyword row contains:
 
 Page Type: {{PAGE_TYPE}}
 Primary Keyword: {{PRIMARY_KEYWORD}}
+Target Audience for Article Idea Expansions: {{TARGET_AUDIENCE}}
+
+Important:
+- Target Audience is used ONLY for article_idea_expansions.
+- It must NOT affect primary_keyword, supporting_keywords, longtail_keywords, competitor_insights, missing_exports, page_strategy_notes, or new_page_opportunities.
+- If Target Audience is "All / Undefined" or blank, article_idea_expansions MUST be an empty array.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GLOBAL DECISION HIERARCHY
@@ -532,6 +538,46 @@ Rules:
 - Limit to the strongest opportunities only.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 9 — ARTICLE IDEA EXPANSIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is a separate content ideation layer. It is NOT part of new_page_opportunities.
+
+Use this section only when Target Audience is a specific audience.
+If Target Audience is "All / Undefined" or blank:
+  → return "article_idea_expansions": []
+
+If a specific audience is selected, generate article ideas by asking:
+- Why does this audience need this?
+- What pain points do they have?
+- When does this problem happen?
+- How do they solve it today?
+- What content angle would make them care?
+- What product/function angle connects naturally?
+
+Use keyword/topic/function signals from any part of the analysis, including:
+- primary keyword
+- supporting keywords
+- longtail keywords
+- new page opportunities
+- product_or_function_idea
+- competitor/comparison signals
+
+Focus mainly on:
+- Blog Post
+- GEO Page
+- Docs Page
+- Use-case Article
+- Comparison Article
+
+Rules:
+- Do NOT invent keyword metrics.
+- Article ideas do not need to map 1:1 to new_page_opportunities.
+- Prefer practical, audience-pain-led article ideas over generic SEO titles.
+- Make the current workaround specific and believable for the selected audience.
+- Limit to the strongest opportunities only.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT SIZE RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -553,6 +599,9 @@ missing_exports:
   maximum 5
 
 new_page_opportunities:
+  maximum 8
+
+article_idea_expansions:
   maximum 8
 
 Do not exceed limits.
@@ -647,6 +696,24 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
       "product_or_function_idea": "string",
       "priority": "High | Medium | Low",
       "difficulty_note": "string"
+    }
+  ],
+  "article_idea_expansions": [
+    {
+      "article_title": "string",
+      "target_audience": "string",
+      "source_keyword_or_topic": "string",
+      "recommended_content_type": "Blog Post | GEO Page | Docs Page | Use-case Article | Comparison Article",
+      "content_angle": "string",
+      "why_this_audience_needs_it": "string",
+      "pain_points": ["string"],
+      "trigger_moment": "string",
+      "current_workaround": "string",
+      "better_solution_angle": "string",
+      "suggested_outline": ["string"],
+      "trust_or_proof_needed": "string",
+      "product_connection": "string",
+      "priority": "High | Medium | Low"
     }
   ]
 }

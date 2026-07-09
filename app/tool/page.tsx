@@ -60,6 +60,23 @@ interface NewPageOpportunity {
   difficulty_note?: string
 }
 
+interface ArticleIdeaExpansion {
+  article_title: string
+  target_audience: string
+  source_keyword_or_topic: string
+  recommended_content_type: string
+  content_angle: string
+  why_this_audience_needs_it: string
+  pain_points?: string[]
+  trigger_moment: string
+  current_workaround: string
+  better_solution_angle: string
+  suggested_outline?: string[]
+  trust_or_proof_needed: string
+  product_connection: string
+  priority?: 'High' | 'Medium' | 'Low' | string
+}
+
 interface StrategyResult {
   primary_keyword: KeywordResult & { validated: boolean; note: string }
   supporting_keywords: KeywordResult[]
@@ -69,6 +86,7 @@ interface StrategyResult {
   missing_exports?: MissingExport[]
   page_strategy_notes: PageStrategyNotes | string
   new_page_opportunities?: NewPageOpportunity[]
+  article_idea_expansions?: ArticleIdeaExpansion[]
 }
 
 interface Stats {
@@ -87,6 +105,16 @@ const PAGE_TYPES = [
   'Blog Post',
   'GEO Page',
   'Docs Page',
+]
+
+const AUDIENCE_OPTIONS = [
+  'All / Undefined',
+  'Graduate students / Academic researchers',
+  'Knowledge workers',
+  'Solo lawyers / small law firms',
+  'Accountants / AP teams',
+  'Data-sensitive teams',
+  'Custom audience',
 ]
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -349,12 +377,67 @@ function NewPageOpportunities({ rows }: { rows: NewPageOpportunity[] }) {
   )
 }
 
+function ArticleIdeaExpansions({ rows }: { rows: ArticleIdeaExpansion[] }) {
+  return (
+    <div style={{ padding: '14px 20px', display: 'grid', gap: '12px' }}>
+      {rows.map((item, i) => (
+        <div key={i} style={{
+          border: '1px solid var(--border)', borderRadius: '4px',
+          padding: '14px', background: 'var(--surface-2)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>{item.article_title}</div>
+              <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: 'var(--accent)', letterSpacing: '0.05em' }}>{item.recommended_content_type}</span>
+                {item.priority && <span style={{ fontSize: '10px', color: 'var(--warn)' }}>{item.priority} priority</span>}
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.target_audience}</span>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: '140px', fontSize: '11px', color: 'var(--text-muted)' }}>
+              Source<br />
+              <span style={{ color: 'var(--text)' }}>{item.source_keyword_or_topic}</span>
+            </div>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text-muted)' }}>Angle:</strong> {item.content_angle}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text-muted)' }}>Why they need it:</strong> {item.why_this_audience_needs_it}
+          </div>
+          {item.pain_points && item.pain_points.length > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-muted)' }}>Pain points:</strong> {item.pain_points.join('; ')}
+            </div>
+          )}
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text-muted)' }}>Trigger moment:</strong> {item.trigger_moment}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text-muted)' }}>Current workaround:</strong> {item.current_workaround}
+          </div>
+          {item.suggested_outline && item.suggested_outline.length > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-muted)' }}>Outline:</strong> {item.suggested_outline.join(' / ')}
+            </div>
+          )}
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+            <strong style={{ color: 'var(--text-muted)' }}>Product connection:</strong> {item.product_connection}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ToolPage() {
   const router = useRouter()
   const fileRefs = useRef<(HTMLInputElement | null)[]>([])
 
   const [pageType, setPageType] = useState('')
   const [primaryKeyword, setPrimaryKeyword] = useState('')
+  const [targetAudience, setTargetAudience] = useState('All / Undefined')
+  const [customTargetAudience, setCustomTargetAudience] = useState('')
   const [sections, setSections] = useState<Section[]>([
     { id: 0, label: 'Topic Keywords',      file: null },
     { id: 1, label: 'Related Keywords',    file: null },
@@ -370,6 +453,7 @@ export default function ToolPage() {
   const [showCompetitor, setShowCompetitor] = useState(false)
   const [showMissing, setShowMissing] = useState(false)
   const [showNewPages, setShowNewPages] = useState(false)
+  const [showArticleIdeas, setShowArticleIdeas] = useState(false)
   const [copied, setCopied] = useState(false)
 
   function addSection() {
@@ -405,6 +489,10 @@ export default function ToolPage() {
     const formData = new FormData()
     formData.append('pageType', pageType)
     formData.append('primaryKeyword', primaryKeyword.trim())
+    formData.append(
+      'targetAudience',
+      targetAudience === 'Custom audience' ? customTargetAudience.trim() : targetAudience
+    )
     for (const section of sections) {
       if (!section.file) continue
       const key = section.label.toLowerCase().replace(/\s+/g, '_')
@@ -610,6 +698,28 @@ export default function ToolPage() {
               </div>
             )}
 
+            {/* Article Idea Expansions (collapsible) */}
+            {result.article_idea_expansions && result.article_idea_expansions.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowArticleIdeas(!showArticleIdeas)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>ARTICLE IDEA EXPANSIONS ({result.article_idea_expansions.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showArticleIdeas ? '▲' : '▼'}</span>
+                </button>
+                {showArticleIdeas && (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <ArticleIdeaExpansions rows={result.article_idea_expansions} />
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Competitor Insights (collapsible) */}
             {result.competitor_insights?.length > 0 && (
               <div style={{
@@ -710,6 +820,26 @@ export default function ToolPage() {
                 <input type="text" placeholder="e.g. video enhancer online" value={primaryKeyword}
                   onChange={e => setPrimaryKeyword(e.target.value)} style={{ width: '100%', padding: '9px 12px' }} />
               </div>
+            </div>
+
+            <div style={{ marginBottom: '28px' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.05em' }}>TARGET AUDIENCE</label>
+              <select value={targetAudience} onChange={e => setTargetAudience(e.target.value)}
+                style={{ width: '100%', padding: '9px 12px', color: 'var(--text)' }}>
+                {AUDIENCE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {targetAudience === 'Custom audience' && (
+                <input
+                  type="text"
+                  placeholder="Describe the target audience..."
+                  value={customTargetAudience}
+                  onChange={e => setCustomTargetAudience(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', marginTop: '10px' }}
+                />
+              )}
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
+                Used only for Article Idea Expansions. If All / Undefined is selected, article ideas will be skipped and other analysis sections are unaffected.
+              </p>
             </div>
 
             <div style={{ marginBottom: '20px' }}>

@@ -42,6 +42,23 @@ type NewPageOpportunity = {
   difficulty_note?: string
 }
 
+type ArticleIdeaExpansion = {
+  article_title?: string
+  target_audience?: string
+  source_keyword_or_topic?: string
+  recommended_content_type?: string
+  content_angle?: string
+  why_this_audience_needs_it?: string
+  pain_points?: string[]
+  trigger_moment?: string
+  current_workaround?: string
+  better_solution_angle?: string
+  suggested_outline?: string[]
+  trust_or_proof_needed?: string
+  product_connection?: string
+  priority?: string
+}
+
 type MissingExport = {
   topic?: string
   reason?: string
@@ -56,6 +73,7 @@ type StrategyReport = {
   missing_exports?: MissingExport[]
   page_strategy_notes?: PageStrategyNotes | string
   new_page_opportunities?: NewPageOpportunity[]
+  article_idea_expansions?: ArticleIdeaExpansion[]
 }
 
 type Stats = {
@@ -170,6 +188,31 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
     if (item.why_new_page) lines.push(`**Why New Page:** ${paragraph(item.why_new_page)}`, '')
     if (item.product_or_function_idea) lines.push(`**Product/Function Idea:** ${paragraph(item.product_or_function_idea)}`, '')
     if (item.difficulty_note) lines.push(`**Difficulty Note:** ${paragraph(item.difficulty_note)}`, '')
+  }
+
+  lines.push('## Article Idea Expansions', '')
+  lines.push(table(
+    ['Article Title', 'Audience', 'Source', 'Content Type', 'Priority', 'Content Angle'],
+    (result.article_idea_expansions ?? []).map(item => [
+      item.article_title,
+      item.target_audience,
+      item.source_keyword_or_topic,
+      item.recommended_content_type,
+      item.priority,
+      item.content_angle,
+    ])
+  ))
+  for (const item of result.article_idea_expansions ?? []) {
+    lines.push(`### ${paragraph(item.article_title || item.source_keyword_or_topic || 'Article Idea')}`, '')
+    lines.push(`**Target Audience:** ${paragraph(item.target_audience)}`, '')
+    if (item.why_this_audience_needs_it) lines.push(`**Why This Audience Needs It:** ${paragraph(item.why_this_audience_needs_it)}`, '')
+    if (item.pain_points?.length) lines.push(`**Pain Points:** ${item.pain_points.map(cell).join('; ')}`, '')
+    if (item.trigger_moment) lines.push(`**Trigger Moment:** ${paragraph(item.trigger_moment)}`, '')
+    if (item.current_workaround) lines.push(`**Current Workaround:** ${paragraph(item.current_workaround)}`, '')
+    if (item.better_solution_angle) lines.push(`**Better Solution Angle:** ${paragraph(item.better_solution_angle)}`, '')
+    if (item.suggested_outline?.length) lines.push(`**Suggested Outline:** ${item.suggested_outline.map(cell).join(' / ')}`, '')
+    if (item.trust_or_proof_needed) lines.push(`**Trust/Proof Needed:** ${paragraph(item.trust_or_proof_needed)}`, '')
+    if (item.product_connection) lines.push(`**Product Connection:** ${paragraph(item.product_connection)}`, '')
   }
 
   lines.push('## Supporting Keywords', '')
