@@ -492,6 +492,45 @@ Answer exactly 3 questions:
    Look for: KD concerns, density issues, trend problems, missing clusters, wrong content format, or overly competitive terms
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 8 — NEW PAGE OPPORTUNITIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After optimizing the current page, scan the remaining keyword set for distinct clusters that should become separate pages.
+
+Purpose:
+- Keep the original page optimization first.
+- Then recommend whole new page ideas that should NOT be forced into the current page.
+- These are discovery opportunities for future content, feature, tool, comparison, or use-case pages.
+
+Recommend a new page only when:
+- The keyword cluster has a different intent, task, audience, format, platform, or product function than the current page.
+- The page can satisfy a clear search need on its own.
+- The cluster has enough evidence from provided keywords to justify a separate URL.
+- It is not merely a synonym or supporting keyword for the current page.
+
+Page types to use:
+- Blog Post
+- Feature Page
+- Online Tool Page
+- Comparison Page
+- Use-case Page
+- Template/Resource Page
+- Docs Page
+
+For each opportunity:
+- Use the best provided keyword as primary_keyword.
+- Include 2 to 5 provided supporting keywords when available.
+- Explain why this deserves a new page instead of being placed on the current page.
+- Translate the keyword pattern into a product_or_function_idea when there is a clear user job.
+- Mark priority as High, Medium, or Low based on intent fit, volume signal, KD realism, commercial value, and content feasibility.
+
+Rules:
+- Do NOT invent metrics.
+- Do NOT invent supporting keywords that are not in the input.
+- If no distinct future page opportunity is available, return an empty array.
+- Limit to the strongest opportunities only.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT SIZE RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -511,6 +550,9 @@ excluded_keywords:
 
 missing_exports:
   maximum 5
+
+new_page_opportunities:
+  maximum 8
 
 Do not exceed limits.
 
@@ -589,6 +631,22 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
     "content_format": "string",
     "biggest_opportunity": "string",
     "primary_risk": "string"
-  }
+  },
+  "new_page_opportunities": [
+    {
+      "page_title": "string",
+      "page_type": "Blog Post | Feature Page | Online Tool Page | Comparison Page | Use-case Page | Template/Resource Page | Docs Page",
+      "primary_keyword": "string",
+      "primary_keyword_volume": 0,
+      "primary_keyword_kd": 0,
+      "supporting_keywords": ["string"],
+      "intent": "string",
+      "content_format": "string",
+      "why_new_page": "string",
+      "product_or_function_idea": "string",
+      "priority": "High | Medium | Low",
+      "difficulty_note": "string"
+    }
+  ]
 }
 `

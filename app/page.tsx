@@ -44,6 +44,21 @@ interface MissingExport {
   reason: string
 }
 
+interface NewPageOpportunity {
+  page_title: string
+  page_type: string
+  primary_keyword: string
+  primary_keyword_volume?: number
+  primary_keyword_kd?: number
+  supporting_keywords?: string[]
+  intent?: string
+  content_format?: string
+  why_new_page?: string
+  product_or_function_idea?: string
+  priority?: 'High' | 'Medium' | 'Low' | string
+  difficulty_note?: string
+}
+
 interface StrategyResult {
   primary_keyword: KeywordResult & { validated: boolean; note: string }
   supporting_keywords: KeywordResult[]
@@ -52,6 +67,7 @@ interface StrategyResult {
   excluded_keywords: KeywordResult[]
   missing_exports?: MissingExport[]
   page_strategy_notes: PageStrategyNotes | string
+  new_page_opportunities?: NewPageOpportunity[]
 }
 
 interface Stats {
@@ -272,6 +288,66 @@ function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+function NewPageOpportunities({ rows }: { rows: NewPageOpportunity[] }) {
+  return (
+    <div style={{ padding: '14px 20px', display: 'grid', gap: '12px' }}>
+      {rows.map((item, i) => (
+        <div key={i} style={{
+          border: '1px solid var(--border)', borderRadius: '4px',
+          padding: '14px', background: 'var(--surface-2)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 600 }}>{item.page_title}</div>
+              <div style={{ marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: 'var(--accent)', letterSpacing: '0.05em' }}>{item.page_type}</span>
+                {item.priority && <span style={{ fontSize: '10px', color: 'var(--warn)' }}>{item.priority} priority</span>}
+                {item.intent && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.intent}</span>}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: '120px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Primary</div>
+              <div style={{ fontSize: '12px', color: 'var(--text)' }}>{item.primary_keyword}</div>
+              {(item.primary_keyword_volume !== undefined || item.primary_keyword_kd !== undefined) && (
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {item.primary_keyword_volume !== undefined ? `vol ${item.primary_keyword_volume.toLocaleString()}` : ''}
+                  {item.primary_keyword_volume !== undefined && item.primary_keyword_kd !== undefined ? ' / ' : ''}
+                  {item.primary_keyword_kd !== undefined ? `kd ${item.primary_keyword_kd}` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+          {item.supporting_keywords && item.supporting_keywords.length > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Supporting: {item.supporting_keywords.join(', ')}
+            </div>
+          )}
+          {item.content_format && (
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px' }}>
+              <strong style={{ color: 'var(--text-muted)' }}>Format:</strong> {item.content_format}
+            </div>
+          )}
+          {item.why_new_page && (
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-muted)' }}>Why new page:</strong> {item.why_new_page}
+            </div>
+          )}
+          {item.product_or_function_idea && (
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '6px', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-muted)' }}>Product/function idea:</strong> {item.product_or_function_idea}
+            </div>
+          )}
+          {item.difficulty_note && (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              {item.difficulty_note}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ToolPage() {
   const router = useRouter()
   const fileRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -292,6 +368,7 @@ export default function ToolPage() {
   const [showExcluded, setShowExcluded] = useState(false)
   const [showCompetitor, setShowCompetitor] = useState(false)
   const [showMissing, setShowMissing] = useState(false)
+  const [showNewPages, setShowNewPages] = useState(false)
   const [copied, setCopied] = useState(false)
 
   function addSection() {
@@ -500,6 +577,28 @@ export default function ToolPage() {
                 <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px' }}>{strategyString}</p>
               )}
             </div>
+
+            {/* New Page Opportunities (collapsible) */}
+            {result.new_page_opportunities && result.new_page_opportunities.length > 0 && (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
+                overflow: 'hidden', marginBottom: '16px'
+              }}>
+                <button onClick={() => setShowNewPages(!showNewPages)} style={{
+                  width: '100%', background: 'none', border: 'none', padding: '14px 20px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
+                }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>NEW PAGE OPPORTUNITIES ({result.new_page_opportunities.length})</span>
+                  <span style={{ fontSize: '11px' }}>{showNewPages ? '▲' : '▼'}</span>
+                </button>
+                {showNewPages && (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <NewPageOpportunities rows={result.new_page_opportunities} />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Competitor Insights (collapsible) */}
             {result.competitor_insights?.length > 0 && (
