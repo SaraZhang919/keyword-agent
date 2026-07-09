@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { downloadMarkdownReport } from '@/lib/markdownReport'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -433,6 +434,11 @@ export default function ToolPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function handleDownloadReport() {
+    if (!result) return
+    downloadMarkdownReport(result, stats)
+  }
+
   function resetForm() {
     setResult(null); setStats(null); setError('')
     setSections(prev => prev.map(s => ({ ...s, file: null })))
@@ -499,6 +505,10 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 color: 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
               }}>← New Analysis</button>
+              <button onClick={handleDownloadReport} style={{
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', padding: '6px 14px', fontSize: '11px', marginRight: '8px'
+              }}>Download Report</button>
               <button onClick={handleCopyJSON} style={{
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 color: copied ? 'var(--accent)' : 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'

@@ -1,0 +1,244 @@
+type KeywordLike = {
+  keyword?: string
+  volume?: number
+  kd?: number
+  kd_tag?: string
+  intent?: string
+  trend_direction?: string
+  cpc?: number
+  density?: number
+  source?: string
+  content_placement?: string
+  flag?: string | null
+  use_case?: string
+  serp_features?: string
+  content_format?: string
+  note?: string
+  reason?: string
+  validated?: boolean
+  combined_signal?: string
+  competitor_brand?: string | null
+  opportunity?: string
+}
+
+type PageStrategyNotes = {
+  content_format?: string
+  biggest_opportunity?: string
+  primary_risk?: string
+}
+
+type NewPageOpportunity = {
+  page_title?: string
+  page_type?: string
+  primary_keyword?: string
+  primary_keyword_volume?: number
+  primary_keyword_kd?: number
+  supporting_keywords?: string[]
+  intent?: string
+  content_format?: string
+  why_new_page?: string
+  product_or_function_idea?: string
+  priority?: string
+  difficulty_note?: string
+}
+
+type MissingExport = {
+  topic?: string
+  reason?: string
+}
+
+type StrategyReport = {
+  primary_keyword?: KeywordLike
+  supporting_keywords?: KeywordLike[]
+  longtail_keywords?: KeywordLike[]
+  competitor_insights?: KeywordLike[]
+  excluded_keywords?: KeywordLike[]
+  missing_exports?: MissingExport[]
+  page_strategy_notes?: PageStrategyNotes | string
+  new_page_opportunities?: NewPageOpportunity[]
+}
+
+type Stats = {
+  total?: number
+  afterVolumeFilter?: number
+  afterDedup?: number
+  sentToAI?: number
+}
+
+function cell(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '-'
+  if (typeof value === 'number') return value.toLocaleString()
+  return String(value).replace(/\r?\n/g, ' ').replace(/\|/g, '\\|').trim() || '-'
+}
+
+function paragraph(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '-'
+  return String(value).trim()
+}
+
+function table(headers: string[], rows: unknown[][]): string {
+  if (!rows.length) return '_None._\n'
+  const header = `| ${headers.map(cell).join(' |')} |`
+  const divider = `| ${headers.map(() => '---').join(' |')} |`
+  const body = rows.map(row => `| ${row.map(cell).join(' |')} |`)
+  return [header, divider, ...body].join('\n') + '\n'
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'analysis'
+}
+
+export function getMarkdownReportFilename(result: StrategyReport): string {
+  const primary = result.primary_keyword?.keyword || 'analysis'
+  const date = new Date().toISOString().slice(0, 10)
+  return `keyword-strategy-${slugify(primary)}-${date}.md`
+}
+
+export function formatMarkdownReport(result: StrategyReport, stats?: Stats | null): string {
+  const primary = result.primary_keyword
+  const notes = result.page_strategy_notes
+  const lines: string[] = [
+    '# Keyword Strategy Report',
+    '',
+    `Generated: ${new Date().toLocaleString()}`,
+    '',
+  ]
+
+  if (stats) {
+    lines.push('## Analysis Stats', '')
+    lines.push(table(
+      ['Input Keywords', 'After Volume Filter', 'After Dedup', 'Sent to AI'],
+      [[stats.total, stats.afterVolumeFilter, stats.afterDedup, stats.sentToAI]]
+    ))
+  }
+
+  lines.push('## Primary Keyword', '')
+  if (primary) {
+    lines.push(table(
+      ['Keyword', 'Volume', 'KD', 'Tag', 'Intent', 'Trend', 'Source', 'Validated'],
+      [[
+        primary.keyword,
+        primary.volume,
+        primary.kd,
+        primary.kd_tag,
+        primary.intent,
+        primary.trend_direction,
+        primary.source,
+        primary.validated === undefined ? '-' : primary.validated ? 'Yes' : 'No',
+      ]]
+    ))
+    if (primary.combined_signal) lines.push(`**Signal:** ${paragraph(primary.combined_signal)}`, '')
+    if (primary.note) lines.push(`**Note:** ${paragraph(primary.note)}`, '')
+  } else {
+    lines.push('_None._', '')
+  }
+
+  lines.push('## Page Strategy Notes', '')
+  if (typeof notes === 'string') {
+    lines.push(paragraph(notes), '')
+  } else if (notes) {
+    lines.push(`**Content Format:** ${paragraph(notes.content_format)}`, '')
+    lines.push(`**Biggest Opportunity:** ${paragraph(notes.biggest_opportunity)}`, '')
+    lines.push(`**Primary Risk:** ${paragraph(notes.primary_risk)}`, '')
+  } else {
+    lines.push('_None._', '')
+  }
+
+  lines.push('## New Page Opportunities', '')
+  lines.push(table(
+    ['Page Title', 'Type', 'Primary Keyword', 'Volume', 'KD', 'Intent', 'Priority', 'Content Format'],
+    (result.new_page_opportunities ?? []).map(item => [
+      item.page_title,
+      item.page_type,
+      item.primary_keyword,
+      item.primary_keyword_volume,
+      item.primary_keyword_kd,
+      item.intent,
+      item.priority,
+      item.content_format,
+    ])
+  ))
+  for (const item of result.new_page_opportunities ?? []) {
+    lines.push(`### ${paragraph(item.page_title || item.primary_keyword || 'Page Opportunity')}`, '')
+    if (item.supporting_keywords?.length) {
+      lines.push(`**Supporting Keywords:** ${item.supporting_keywords.map(cell).join(', ')}`, '')
+    }
+    if (item.why_new_page) lines.push(`**Why New Page:** ${paragraph(item.why_new_page)}`, '')
+    if (item.product_or_function_idea) lines.push(`**Product/Function Idea:** ${paragraph(item.product_or_function_idea)}`, '')
+    if (item.difficulty_note) lines.push(`**Difficulty Note:** ${paragraph(item.difficulty_note)}`, '')
+  }
+
+  lines.push('## Supporting Keywords', '')
+  lines.push(table(
+    ['Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Intent', 'Placement', 'Flag'],
+    (result.supporting_keywords ?? []).map(item => [
+      item.keyword,
+      item.volume,
+      item.kd,
+      item.kd_tag,
+      item.trend_direction,
+      item.intent,
+      item.content_placement,
+      item.flag,
+    ])
+  ))
+
+  lines.push('## Longtail Keywords', '')
+  lines.push(table(
+    ['Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'SERP', 'Content Format', 'Use Case'],
+    (result.longtail_keywords ?? []).map(item => [
+      item.keyword,
+      item.volume,
+      item.kd,
+      item.kd_tag,
+      item.trend_direction,
+      item.serp_features,
+      item.content_format,
+      item.use_case,
+    ])
+  ))
+
+  lines.push('## Competitor Insights', '')
+  lines.push(table(
+    ['Keyword', 'Volume', 'KD', 'Source', 'Competitor Brand', 'Opportunity'],
+    (result.competitor_insights ?? []).map(item => [
+      item.keyword,
+      item.volume,
+      item.kd,
+      item.source,
+      item.competitor_brand,
+      item.opportunity,
+    ])
+  ))
+
+  lines.push('## Missing Exports', '')
+  lines.push(table(
+    ['Topic', 'Reason'],
+    (result.missing_exports ?? []).map(item => [item.topic, item.reason])
+  ))
+
+  lines.push('## Excluded Keywords', '')
+  lines.push(table(
+    ['Keyword', 'Reason'],
+    (result.excluded_keywords ?? []).map(item => [item.keyword, item.reason])
+  ))
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n')
+}
+
+export function downloadMarkdownReport(result: StrategyReport, stats?: Stats | null): void {
+  const report = formatMarkdownReport(result, stats)
+  const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = getMarkdownReportFilename(result)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
