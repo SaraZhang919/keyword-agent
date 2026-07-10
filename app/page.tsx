@@ -600,10 +600,17 @@ export default function ToolPage() {
               padding: '5px 12px', fontSize: '11px'
             }}>Guide</button>
           )}
-          <button onClick={() => router.push('/admin')} style={{
-            background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
-            padding: '5px 12px', fontSize: '11px'
-          }}>Admin</button>
+          {isAdmin ? (
+            <button onClick={() => router.push('/admin')} style={{
+              background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
+              padding: '5px 12px', fontSize: '11px'
+            }}>Prompt Editor</button>
+          ) : (
+            <button onClick={() => router.push('/admin?mode=unlock&returnTo=/')} style={{
+              background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
+              padding: '5px 12px', fontSize: '11px'
+            }}>Admin Login</button>
+          )}
           <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); router.push('/') }} style={{
             background: 'none', border: 'none', color: 'var(--text-muted)', padding: '5px'
           }}>Logout</button>

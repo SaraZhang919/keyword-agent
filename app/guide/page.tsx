@@ -355,8 +355,8 @@ export default function GuidePage() {
             }}>
               {['Form inputs', 'Merged keyword list', 'Active prompt', 'OpenAI JSON result', 'UI + Markdown report'].map((step, i) => (
                 <div key={step} style={{
-                  background: i === 2 ? 'var(--accent-dim)' : 'var(--surface-2)',
-                  border: `1px solid ${i === 2 ? 'var(--accent)' : 'var(--border)'}`,
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '4px',
                   padding: '12px',
                   minHeight: '74px',

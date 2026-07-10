@@ -1,9 +1,13 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function AdminPage() {
+function AdminContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const mode = searchParams.get('mode')
+  const returnTo = searchParams.get('returnTo') || '/tool'
+  const unlockOnly = mode === 'unlock'
   const [adminPassword, setAdminPassword] = useState('')
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState('')
@@ -22,8 +26,12 @@ export default function AdminPage() {
       body: JSON.stringify({ password: adminPassword, type: 'admin' }),
     })
     if (res.ok) {
-      setAuthed(true)
-      loadPrompt()
+      if (unlockOnly) {
+        router.push(returnTo)
+      } else {
+        setAuthed(true)
+        loadPrompt()
+      }
     } else {
       setAuthError('Invalid admin password')
     }
@@ -78,7 +86,9 @@ export default function AdminPage() {
           }}>← Back to tool</button>
           <h1 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>Admin Access</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '24px' }}>
-            Enter admin password to manage prompts
+            {unlockOnly
+              ? 'Enter admin password to unlock Guide and Prompt Editor options on the tool page.'
+              : 'Enter admin password to manage prompts'}
           </p>
           <form onSubmit={handleAdminLogin}>
             <input
@@ -211,5 +221,20 @@ export default function AdminPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)', color: 'var(--text-muted)', fontSize: '12px'
+      }}>
+        Loading admin...
+      </div>
+    }>
+      <AdminContent />
+    </Suspense>
   )
 }
