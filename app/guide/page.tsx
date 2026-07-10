@@ -11,52 +11,128 @@ type PromptResponse = {
 const decisionPatterns = [
   {
     title: 'Primary Keyword',
-    pattern: 'Choose the best single target keyword for the current page.',
-    checks: 'Intent fit, volume, KD realism, relevance to page type, and whether the term can represent the page.',
+    pattern: 'Choose the strongest realistic target keyword for the current page. The submitted keyword is only a candidate, not automatically the final target.',
+    criteria: [
+      'Reject brand terms and competitor-source keywords as primary targets.',
+      'Judge intent fit first: the searcher goal must match what the selected page type can satisfy.',
+      'Judge page-type fit using floors: Tool 500+ volume with transactional/commercial intent; Feature 200+ commercial intent; Blog 100+ informational/commercial intent; GEO 50+ with location modifier; Docs 30+ informational intent.',
+      'Prefer the highest-volume keyword that still has realistic ranking potential for DA<30.',
+      'KD realism: Priority KD<40 is strongest; Mid-term KD40-80 is allowed only when intent/page fit and volume justify it; Long-term KD>80 is usually avoided.',
+      'Density is a risk modifier: density >0.7 means strong paid competition, but not automatic exclusion.',
+      'Trend check: Declining plus volume <100 is rejected unless strategically important.',
+      'SERP reality: lower priority if the SERP format does not match the page type.',
+    ],
     optimize: 'Tune this when the tool picks a keyword that is too broad, too weak, or not aligned with the page job.',
   },
   {
     title: 'Supporting Keywords',
-    pattern: 'Find close semantic helpers that belong inside the same page.',
-    checks: 'Same or strongly related intent, natural section placement, no competitor/brand misuse, and useful topical coverage.',
+    pattern: 'Find 5-10 same-page keywords that deepen the current page, not separate future pages.',
+    criteria: [
+      'Exclude brand terms and all source:competitor terms.',
+      'Prioritize Priority KD<40 keywords.',
+      'Allow at most 2 Mid-term KD40-80 keywords, only if volume is strong and intent/page fit justify difficulty.',
+      'Exclude Long-term KD>80 keywords.',
+      'Prefer topic-source terms first, then related-source terms for semantic depth.',
+      'Keep keywords close enough to fit naturally into page sections, FAQs, feature blocks, or comparison notes.',
+      'Avoid keywords that imply a different product class or a separate page intent.',
+    ],
     optimize: 'Tune this when same-page terms are too loose, too repetitive, or missing from section recommendations.',
   },
   {
     title: 'Longtail Keywords',
-    pattern: 'Capture narrower searches the same page can answer.',
-    checks: 'Question, how-to, use-case, SERP, tutorial, or comparison intent that can fit FAQ/body content.',
+    pattern: 'Select 5-15 narrower searches the current page can answer without becoming a separate page.',
+    criteria: [
+      'Prefer question, how-to, use-case, tutorial, SERP-feature, and specific workflow queries.',
+      'Informational longtails can win even with slightly worse KD if Featured Snippet, People Also Ask, or AI Overview opportunity is strong.',
+      'Competitor/brand longtails are allowed only for Blog comparison, alternative, or migration intent.',
+      'Map SERP features to content format: Featured Snippet needs a direct answer; People Also Ask needs H3 Q&A; Video carousel suggests video content; AI Overview suggests citation-ready sections.',
+      'Avoid declining low-volume terms unless strategically important.',
+    ],
     optimize: 'Tune this when you want more practical article angles or fewer marginal low-intent variants.',
   },
   {
     title: 'New Page Opportunities',
-    pattern: 'Scan all keywords for clusters that deserve their own future page.',
-    checks: 'Topic cluster, intent, task, audience, content format, platform, or product/function signal. It does not depend on the current page.',
+    pattern: 'Scan all keywords for clusters that deserve their own future page, independent of the current page.',
+    criteria: [
+      'Cluster by topic, intent, user task, audience, content format, platform, or product/function signal.',
+      'Use the best provided keyword as the page primary keyword; do not invent keyword metrics.',
+      'Include 2-5 provided supporting keywords when available.',
+      'Suggest page types such as Blog Post, Feature Page, Online Tool Page, Comparison Page, Use-case Page, GEO Page, Template/Resource Page, or Docs Page.',
+      'Explain why the cluster deserves its own page instead of being folded into the current page.',
+      'Translate the pattern into a product_or_function_idea only when there is a clear user job.',
+      'Prioritize by intent fit, volume signal, KD realism, commercial value, and content feasibility.',
+    ],
     optimize: 'Tune this when the tool misses GEO pages, online tools, docs, use-case pages, or product-function ideas.',
   },
   {
     title: 'Article Idea Expansions',
-    pattern: 'Generate audience-aware article ideas when a specific target audience is selected.',
-    checks: 'Audience pain, trigger moment, current workaround, content angle, product connection, and trust/proof needed.',
+    pattern: 'Generate 3-8 audience-aware article ideas only when a specific target audience is selected.',
+    criteria: [
+      'If Target Audience is All / Undefined or blank, return an empty array.',
+      'Use keyword, topic, new-page, product/function, and competitor signals as idea seeds.',
+      'Focus on Blog Post, GEO Page, Docs Page, Use-case Article, and Comparison Article.',
+      'For each idea, explain why the audience needs it, pain points, trigger moment, current workaround, better solution angle, outline, proof needed, and product connection.',
+      'Prefer practical audience-pain-led angles over generic SEO titles.',
+      'Do not invent keyword metrics.',
+    ],
     optimize: 'Tune this when ideas feel generic, not audience-specific, or disconnected from real workflow pain.',
   },
   {
     title: 'Competitor Insights',
-    pattern: 'Move competitor or brand demand into a separate insight area.',
-    checks: 'Brand names, alternatives, comparisons, competitor capture intent, and pages that should not use brand terms as primary/supporting keywords.',
+    pattern: 'Move competitor or brand demand into a separate strategy insight area.',
+    criteria: [
+      'source:competitor keywords are discovery signals, not primary SEO targets.',
+      'Never use competitor-source keywords as primary or supporting keywords.',
+      'Never use brand:yes keywords as primary or supporting keywords.',
+      'Use competitor keywords to reveal demand around alternatives, comparisons, migration, and future blog/comparison pages.',
+      'Allow competitor/brand terms in longtail only for Blog comparison or alternative pages, and flag them clearly.',
+    ],
     optimize: 'Tune this when brand terms leak into main keyword recommendations or comparison opportunities are missed.',
   },
   {
     title: 'Missing Exports',
-    pattern: 'Flag important keyword clusters that appear absent from the uploaded or pasted data.',
-    checks: 'Expected modifier groups, formats, competitor sets, use-case clusters, or language/topic gaps.',
+    pattern: 'Flag missing data clusters that could change the recommendation quality.',
+    criteria: [
+      'Look for absent but expected modifier groups, formats, competitor sets, use-case clusters, language variants, or platform terms.',
+      'Recommend missing exports when the available data is too narrow to validate a strong primary or page cluster.',
+      'Use this as a data-quality warning, not as a keyword invention area.',
+      'Limit to the highest-impact missing clusters.',
+    ],
     optimize: 'Tune this when you want stronger data-quality warnings before trusting the strategy.',
   },
   {
     title: 'Excluded Keywords',
-    pattern: 'Explain why visible keywords were not used.',
-    checks: 'Wrong intent, weak relevance, duplicate-like pattern, risky brand term, low usefulness, or poor fit for the page strategy.',
+    pattern: 'Explain why visible keywords were intentionally not used.',
+    criteria: [
+      'Exclude wrong-intent terms that do not match the page type or product outcome.',
+      'Exclude terms that clearly belong to another product class, such as downloader, streaming, codec pack, torrent, or hardware-only terms.',
+      'Exclude Long-term KD>80 terms from same-page/supporting decisions.',
+      'Exclude declining low-volume terms unless strategically important.',
+      'Move brand/competitor terms to competitor insights instead of using them as main targets.',
+      'Use exclusion notes to make tradeoffs auditable.',
+    ],
     optimize: 'Tune this when the model is excluding keywords you consider strategically important.',
   },
+]
+
+const globalRankingRules = [
+  'Intent fit',
+  'Page-type fit',
+  'Volume',
+  'KD',
+  'Density',
+  'Trend direction',
+  'Source type',
+  'SERP feature opportunity',
+]
+
+const metricRules = [
+  'Priority: KD<40, best realistic target for DA<30.',
+  'Mid-term: KD40-80, acceptable only when intent fit, page fit, and volume justify it.',
+  'Long-term: KD>80, future-only or lowest priority.',
+  'Density <0.3 is low paid competition; 0.3-0.6 is moderate; >0.6 is high commercial saturation.',
+  'High density is not automatic exclusion, but it matters more for transactional and commercial pages.',
+  'Trend is Rising when recent average is more than 10% above early average; Declining when more than 10% below; otherwise Stable.',
 ]
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -292,6 +368,32 @@ export default function GuidePage() {
             </div>
           </Card>
 
+          <Card title="Global Ranking Logic">
+            <p style={{ color: 'var(--text-dim)', margin: '0 0 12px' }}>
+              When multiple keywords qualify, the LLM should compare them in this order. Lower KD alone does not win
+              if intent, page fit, or volume is weaker.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+              {globalRankingRules.map((rule, i) => (
+                <div key={rule} style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  padding: '10px',
+                }}>
+                  <SmallLabel>Priority {i + 1}</SmallLabel>
+                  <div style={{ marginTop: '4px', color: 'var(--text)' }}>{rule}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Metric Interpretation">
+            <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-dim)' }}>
+              {metricRules.map(rule => <li key={rule}>{rule}</li>)}
+            </ul>
+          </Card>
+
           <Card title="Decision Patterns">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
               {decisionPatterns.map(item => (
@@ -303,9 +405,10 @@ export default function GuidePage() {
                 }}>
                   <h3 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text)' }}>{item.title}</h3>
                   <p style={{ margin: '0 0 8px', color: 'var(--text-dim)' }}>{item.pattern}</p>
-                  <p style={{ margin: '0 0 8px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                    <strong style={{ color: 'var(--text-dim)' }}>Checks:</strong> {item.checks}
-                  </p>
+                  <SmallLabel>How it judges</SmallLabel>
+                  <ul style={{ margin: '6px 0 10px', paddingLeft: '18px', color: 'var(--text-muted)', fontSize: '11px' }}>
+                    {item.criteria.map(rule => <li key={rule}>{rule}</li>)}
+                  </ul>
                   <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '11px' }}>
                     <strong style={{ color: 'var(--text-dim)' }}>Optimize when:</strong> {item.optimize}
                   </p>
