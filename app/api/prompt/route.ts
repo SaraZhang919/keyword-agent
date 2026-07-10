@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { DEFAULT_PROMPT } from '@/lib/prompt'
 
+function isAdminAuthed(request: NextRequest): boolean {
+  const expected = process.env.ADMIN_PASSWORD
+  return !!expected && request.cookies.get('admin_token')?.value === expected
+}
+
 function supportsArticleIdeaExpansions(prompt: string): boolean {
   return (
     prompt.includes('{{TARGET_AUDIENCE}}') &&
@@ -16,7 +21,11 @@ async function getKV() {
   })
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!isAdminAuthed(request)) {
+    return NextResponse.json({ error: 'Admin access required.' }, { status: 401 })
+  }
+
   try {
     const kv = await getKV()
     const saved = await kv.get<string>('keyword-strategy-prompt')
@@ -30,6 +39,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isAdminAuthed(request)) {
+    return NextResponse.json({ error: 'Admin access required.' }, { status: 401 })
+  }
+
   const { prompt } = await request.json()
   if (
     !prompt?.includes('{{PAGE_TYPE}}') ||
@@ -50,7 +63,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  if (!isAdminAuthed(request)) {
+    return NextResponse.json({ error: 'Admin access required.' }, { status: 401 })
+  }
+
   try {
     const kv = await getKV()
     await kv.del('keyword-strategy-prompt')

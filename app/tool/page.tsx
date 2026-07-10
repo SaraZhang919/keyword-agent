@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { downloadMarkdownReport } from '@/lib/markdownReport'
 
@@ -471,6 +471,21 @@ export default function ToolPage() {
   const [showNewPages, setShowNewPages] = useState(false)
   const [showArticleIdeas, setShowArticleIdeas] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    async function checkAdmin() {
+      try {
+        const res = await fetch('/api/admin-status')
+        const data = await res.json()
+        setIsAdmin(data.isAdmin === true)
+      } catch {
+        setIsAdmin(false)
+      }
+    }
+
+    checkAdmin()
+  }, [])
 
   function addSection() {
     if (sections.length >= MAX_SECTIONS) return
@@ -579,10 +594,12 @@ export default function ToolPage() {
           }}>v2</span>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <button onClick={() => router.push('/guide')} style={{
-            background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
-            padding: '5px 12px', fontSize: '11px'
-          }}>Guide</button>
+          {isAdmin && (
+            <button onClick={() => router.push('/guide')} style={{
+              background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
+              padding: '5px 12px', fontSize: '11px'
+            }}>Guide</button>
+          )}
           <button onClick={() => router.push('/admin')} style={{
             background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
             padding: '5px 12px', fontSize: '11px'

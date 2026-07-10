@@ -93,29 +93,113 @@ function SmallLabel({ children }: { children: React.ReactNode }) {
 
 export default function GuidePage() {
   const router = useRouter()
+  const [adminPassword, setAdminPassword] = useState('')
+  const [authed, setAuthed] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [authError, setAuthError] = useState('')
   const [promptData, setPromptData] = useState<PromptResponse | null>(null)
   const [promptError, setPromptError] = useState('')
   const [loadingPrompt, setLoadingPrompt] = useState(false)
   const [showPrompt, setShowPrompt] = useState(false)
 
+  async function handleAdminLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setAuthError('')
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: adminPassword, type: 'admin' }),
+    })
+
+    if (res.ok) {
+      setAuthed(true)
+    } else {
+      setAuthError('Invalid admin password')
+    }
+  }
+
+  async function loadPrompt() {
+    setLoadingPrompt(true)
+    setPromptError('')
+    try {
+      const res = await fetch('/api/prompt')
+      if (!res.ok) throw new Error('Could not load prompt')
+      const data = await res.json()
+      setPromptData(data)
+    } catch {
+      setPromptError('Could not load the active prompt. You can still review the decision guide below.')
+    } finally {
+      setLoadingPrompt(false)
+    }
+  }
+
   useEffect(() => {
-    async function loadPrompt() {
-      setLoadingPrompt(true)
-      setPromptError('')
+    if (authed) loadPrompt()
+  }, [authed])
+
+  useEffect(() => {
+    async function checkAdmin() {
       try {
-        const res = await fetch('/api/prompt')
-        if (!res.ok) throw new Error('Could not load prompt')
+        const res = await fetch('/api/admin-status')
         const data = await res.json()
-        setPromptData(data)
+        if (data.isAdmin === true) setAuthed(true)
       } catch {
-        setPromptError('Could not load the active prompt. You can still review the decision guide below.')
+        setAuthed(false)
       } finally {
-        setLoadingPrompt(false)
+        setCheckingAuth(false)
       }
     }
 
-    loadPrompt()
+    checkAdmin()
   }, [])
+
+  if (checkingAuth) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)', color: 'var(--text-muted)', fontSize: '12px'
+      }}>
+        Checking admin access...
+      </div>
+    )
+  }
+
+  if (!authed) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)'
+      }}>
+        <div style={{ width: '360px' }}>
+          <button onClick={() => router.push('/tool')} style={{
+            background: 'none', border: 'none', color: 'var(--text-muted)', marginBottom: '24px',
+            padding: 0, cursor: 'pointer', fontSize: '12px'
+          }}>Back to tool</button>
+          <SmallLabel>Admin only</SmallLabel>
+          <h1 style={{ fontSize: '18px', fontWeight: '600', margin: '8px 0' }}>Tool Logic Guide</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '24px' }}>
+            Enter the admin password to view prompt logic, decision patterns, and optimization notes.
+          </p>
+          <form onSubmit={handleAdminLogin}>
+            <input
+              type="password"
+              placeholder="Admin password"
+              value={adminPassword}
+              onChange={e => setAdminPassword(e.target.value)}
+              autoFocus
+              style={{ width: '100%', padding: '10px 14px', marginBottom: '12px' }}
+            />
+            {authError && <p style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: '10px' }}>{authError}</p>}
+            <button type="submit" disabled={!adminPassword} style={{
+              width: '100%', padding: '10px', background: 'var(--accent)', border: 'none',
+              color: '#000', fontWeight: '600', cursor: adminPassword ? 'pointer' : 'not-allowed',
+              borderRadius: '4px', opacity: adminPassword ? 1 : 0.7
+            }}>Enter</button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
