@@ -579,6 +579,10 @@ export default function ToolPage() {
           }}>v2</span>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button onClick={() => router.push('/guide')} style={{
+            background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
+            padding: '5px 12px', fontSize: '11px'
+          }}>Guide</button>
           <button onClick={() => router.push('/admin')} style={{
             background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
             padding: '5px 12px', fontSize: '11px'
