@@ -29,6 +29,62 @@ export async function fileToRows(
 }
 
 // ─── Normalise column names and extract keyword + metrics ──────────────────
+function parseNumber(value: string): number | undefined {
+  const normalized = value.trim().replace(/,/g, '')
+  if (!normalized || normalized === '/' || normalized === '-') return undefined
+  const parsed = parseFloat(normalized)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export function pasteToRows(
+  text: string,
+  source: string
+): { rows: KeywordRow[]; error?: string } {
+  const rows: KeywordRow[] = []
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  for (const line of lines) {
+    let keyword = ''
+    let volumeText = ''
+    let kdText = ''
+
+    const tabParts = line.split('\t').map(part => part.trim()).filter(Boolean)
+    if (tabParts.length >= 2) {
+      keyword = tabParts[0]
+      volumeText = tabParts[1]
+      kdText = tabParts[2] ?? ''
+    } else {
+      const match = line.match(/^(.*?)\s+([0-9][0-9,\.]*)\s+([0-9]+|\/|-)?$/)
+      if (!match) continue
+      keyword = match[1]
+      volumeText = match[2]
+      kdText = match[3] ?? ''
+    }
+
+    const volume = parseNumber(volumeText)
+    if (!keyword || volume === undefined) continue
+
+    rows.push({
+      keyword: keyword.trim().toLowerCase(),
+      volume,
+      kd: parseNumber(kdText),
+      source,
+    })
+  }
+
+  if (text.trim() && rows.length === 0) {
+    return {
+      rows: [],
+      error: `Could not parse pasted keywords for section "${source}". Use rows like: keyword<TAB>volume<TAB>kd.`,
+    }
+  }
+
+  return { rows }
+}
+
 function findCol(headers: string[], candidates: string[]): string | undefined {
   const h = headers.map(s => s.toLowerCase().trim())
   for (const c of candidates) {

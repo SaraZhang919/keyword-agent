@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fileToRows, parseRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
+import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 function supportsArticleIdeaExpansions(prompt: string): boolean {
@@ -36,9 +36,12 @@ export async function POST(request: NextRequest) {
     const allRows: Awaited<ReturnType<typeof parseRows>>['rows'] = []
     const entries = Array.from(formData.entries())
     const fileEntries = entries.filter(([key]) => key.endsWith('_file'))
+    const pasteEntries = entries.filter(([key, value]) =>
+      key.endsWith('_paste') && typeof value === 'string' && value.trim()
+    )
 
-    if (fileEntries.length === 0) {
-      return NextResponse.json({ error: 'Please upload at least one keyword file.' }, { status: 400 })
+    if (fileEntries.length === 0 && pasteEntries.length === 0) {
+      return NextResponse.json({ error: 'Please upload a keyword file or paste keyword rows.' }, { status: 400 })
     }
 
     for (const [key, value] of fileEntries) {
@@ -55,8 +58,16 @@ export async function POST(request: NextRequest) {
       allRows.push(...rows)
     }
 
+    for (const [key, value] of pasteEntries) {
+      const labelKey = key.replace('_paste', '_label')
+      const label = (formData.get(labelKey) as string) || key.replace('_paste', '').replace(/_/g, ' ')
+      const { rows, error: pasteError } = pasteToRows(value as string, label)
+      if (pasteError) return NextResponse.json({ error: pasteError }, { status: 400 })
+      allRows.push(...rows)
+    }
+
     if (allRows.length === 0) {
-      return NextResponse.json({ error: 'No keywords found in uploaded files' }, { status: 400 })
+      return NextResponse.json({ error: 'No keywords found in uploaded files or pasted rows' }, { status: 400 })
     }
 
     const { filtered, stats } = mergeAndFilter(allRows)

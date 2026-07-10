@@ -9,6 +9,7 @@ type Section = {
   id: number
   label: string
   file: File | null
+  paste: string
 }
 
 interface KeywordResult extends Record<string, unknown> {
@@ -150,7 +151,7 @@ function StatBadge({ label, value, accent }: { label: string; value: number; acc
 }
 
 function SectionRow({
-  section, index, canRemove, inputRef, onLabelChange, onFileChange, onRemove
+  section, index, canRemove, inputRef, onLabelChange, onFileChange, onPasteChange, onRemove
 }: {
   section: Section
   index: number
@@ -158,6 +159,7 @@ function SectionRow({
   inputRef: (el: HTMLInputElement | null) => void
   onLabelChange: (v: string) => void
   onFileChange: (f: File | null) => void
+  onPasteChange: (v: string) => void
   onRemove: () => void
 }) {
   return (
@@ -191,6 +193,20 @@ function SectionRow({
         color: canRemove ? 'var(--text-muted)' : 'transparent',
         fontSize: '16px', cursor: canRemove ? 'pointer' : 'default', padding: '2px 4px', lineHeight: 1,
       }}>×</button>
+      <textarea
+        value={section.paste}
+        onChange={e => onPasteChange(e.target.value)}
+        placeholder="Or paste keyword rows: keyword [tab] volume [tab] KD"
+        rows={3}
+        style={{
+          gridColumn: '2 / 4',
+          width: '100%',
+          padding: '8px 10px',
+          fontSize: '11px',
+          lineHeight: 1.5,
+          resize: 'vertical',
+        }}
+      />
     </div>
   )
 }
@@ -439,9 +455,9 @@ export default function ToolPage() {
   const [targetAudience, setTargetAudience] = useState('All / Undefined')
   const [customTargetAudience, setCustomTargetAudience] = useState('')
   const [sections, setSections] = useState<Section[]>([
-    { id: 0, label: 'Topic Keywords',      file: null },
-    { id: 1, label: 'Related Keywords',    file: null },
-    { id: 2, label: 'Competitor Keywords', file: null },
+    { id: 0, label: 'Topic Keywords',      file: null, paste: '' },
+    { id: 1, label: 'Related Keywords',    file: null, paste: '' },
+    { id: 2, label: 'Competitor Keywords', file: null, paste: '' },
   ])
 
   const [loading, setLoading] = useState(false)
@@ -458,7 +474,7 @@ export default function ToolPage() {
 
   function addSection() {
     if (sections.length >= MAX_SECTIONS) return
-    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null }])
+    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null, paste: '' }])
   }
 
   function removeSection(id: number) {
@@ -473,8 +489,12 @@ export default function ToolPage() {
     setSections(prev => prev.map(s => s.id === id ? { ...s, file } : s))
   }
 
+  function updatePaste(id: number, paste: string) {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, paste } : s))
+  }
+
   async function handleGenerate() {
-    const filledSections = sections.filter(s => s.file)
+    const filledSections = sections.filter(s => s.file || s.paste.trim())
     if (filledSections.length === 0 || !pageType || !primaryKeyword) return
 
     setLoading(true)
@@ -494,10 +514,11 @@ export default function ToolPage() {
       targetAudience === 'Custom audience' ? customTargetAudience.trim() : targetAudience
     )
     for (const section of sections) {
-      if (!section.file) continue
+      if (!section.file && !section.paste.trim()) continue
       const key = section.label.toLowerCase().replace(/\s+/g, '_')
-      formData.append(`${key}_file`, section.file)
       formData.append(`${key}_label`, section.label)
+      if (section.file) formData.append(`${key}_file`, section.file)
+      if (section.paste.trim()) formData.append(`${key}_paste`, section.paste.trim())
     }
 
     const res = await fetch('/api/generate', { method: 'POST', body: formData })
@@ -529,11 +550,11 @@ export default function ToolPage() {
 
   function resetForm() {
     setResult(null); setStats(null); setError('')
-    setSections(prev => prev.map(s => ({ ...s, file: null })))
+    setSections(prev => prev.map(s => ({ ...s, file: null, paste: '' })))
     fileRefs.current.forEach(ref => { if (ref) ref.value = '' })
   }
 
-  const canGenerate = sections.some(s => s.file) && !!pageType && !!primaryKeyword && !loading
+  const canGenerate = sections.some(s => s.file || s.paste.trim()) && !!pageType && !!primaryKeyword && !loading
 
   const strategyNotes = result && typeof result.page_strategy_notes === 'object'
     ? result.page_strategy_notes as PageStrategyNotes : null
@@ -845,7 +866,7 @@ export default function ToolPage() {
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                 <div style={{ fontSize: '10px', letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Keyword Files <span style={{ fontWeight: 400, marginLeft: '8px' }}>({sections.length}/{MAX_SECTIONS} sections)</span>
+                  Keyword Sources <span style={{ fontWeight: 400, marginLeft: '8px' }}>({sections.length}/{MAX_SECTIONS} sections)</span>
                 </div>
                 {sections.length < MAX_SECTIONS && (
                   <button type="button" onClick={addSection} style={{
@@ -863,13 +884,14 @@ export default function ToolPage() {
                     inputRef={el => { fileRefs.current[i] = el }}
                     onLabelChange={label => updateLabel(section.id, label)}
                     onFileChange={file => updateFile(section.id, file)}
+                    onPasteChange={paste => updatePaste(section.id, paste)}
                     onRemove={() => removeSection(section.id)}
                   />
                 ))}
               </div>
 
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
-                CSV or XLSX from SEMrush, Ahrefs, or similar. Needs Keyword + Volume columns.
+                Upload CSV/XLSX with Keyword + Volume columns, or paste rows as keyword [tab] volume [tab] KD.
                 Pre-filter: removes vol &lt; 30, deduplicates, caps at 300 sent to AI.
               </p>
             </div>
