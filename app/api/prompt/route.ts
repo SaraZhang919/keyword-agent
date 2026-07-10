@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { DEFAULT_PROMPT } from '@/lib/prompt'
 
+function supportsArticleIdeaExpansions(prompt: string): boolean {
+  return (
+    prompt.includes('{{TARGET_AUDIENCE}}') &&
+    prompt.includes('article_idea_expansions')
+  )
+}
+
 async function getKV() {
   const { Redis } = await import('@upstash/redis')
   return new Redis({
@@ -13,7 +20,9 @@ export async function GET() {
   try {
     const kv = await getKV()
     const saved = await kv.get<string>('keyword-strategy-prompt')
-    if (saved) return NextResponse.json({ prompt: saved, isDefault: false })
+    if (saved && supportsArticleIdeaExpansions(saved)) {
+      return NextResponse.json({ prompt: saved, isDefault: false })
+    }
     return NextResponse.json({ prompt: DEFAULT_PROMPT, isDefault: true })
   } catch {
     return NextResponse.json({ prompt: DEFAULT_PROMPT, isDefault: true, kvUnavailable: true })
@@ -22,9 +31,13 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const { prompt } = await request.json()
-  if (!prompt?.includes('{{PAGE_TYPE}}') || !prompt?.includes('{{PRIMARY_KEYWORD}}')) {
+  if (
+    !prompt?.includes('{{PAGE_TYPE}}') ||
+    !prompt?.includes('{{PRIMARY_KEYWORD}}') ||
+    !supportsArticleIdeaExpansions(prompt)
+  ) {
     return NextResponse.json(
-      { error: 'Prompt must contain {{PAGE_TYPE}} and {{PRIMARY_KEYWORD}} placeholders.' },
+      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, and article_idea_expansions.' },
       { status: 400 }
     )
   }

@@ -547,7 +547,7 @@ Use this section only when Target Audience is a specific audience.
 If Target Audience is "All / Undefined" or blank:
   → return "article_idea_expansions": []
 
-If a specific audience is selected, generate article ideas by asking:
+If a specific audience is selected, generate 3 to 8 article ideas by asking:
 - Why does this audience need this?
 - What pain points do they have?
 - When does this problem happen?
@@ -572,6 +572,7 @@ Focus mainly on:
 
 Rules:
 - Do NOT invent keyword metrics.
+- If Target Audience is specific and there are any usable keyword, topic, page, function, or competitor signals, article_idea_expansions MUST NOT be empty.
 - Article ideas do not need to map 1:1 to new_page_opportunities.
 - Prefer practical, audience-pain-led article ideas over generic SEO titles.
 - Make the current workaround specific and believable for the selected audience.

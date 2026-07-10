@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, parseRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
+function supportsArticleIdeaExpansions(prompt: string): boolean {
+  return (
+    prompt.includes('{{TARGET_AUDIENCE}}') &&
+    prompt.includes('article_idea_expansions')
+  )
+}
+
 function extractJsonObject(text: string): string | null {
   const cleaned = text.replace(/```json|```/g, '').trim()
   const start = cleaned.indexOf('{')
@@ -66,7 +73,7 @@ export async function POST(request: NextRequest) {
         token: process.env.KV_REST_API_TOKEN!,
       })
       const saved = await kv.get<string>('keyword-strategy-prompt')
-      if (saved) prompt = saved
+      if (saved && supportsArticleIdeaExpansions(saved)) prompt = saved
     } catch {
       // KV not configured, use default prompt
     }
