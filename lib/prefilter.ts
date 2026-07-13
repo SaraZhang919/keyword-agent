@@ -30,10 +30,11 @@ export async function fileToRows(
 
 // ─── Normalise column names and extract keyword + metrics ──────────────────
 function parseNumber(value: string): number | undefined {
-  const normalized = value.trim().replace(/,/g, '')
+  const normalized = value.trim().replace(/,/g, '').replace(/\s+/g, '').toLowerCase()
   if (!normalized || normalized === '/' || normalized === '-') return undefined
-  const parsed = parseFloat(normalized)
-  return Number.isFinite(parsed) ? parsed : undefined
+  const multiplier = normalized.endsWith('k') ? 1000 : normalized.endsWith('m') ? 1000000 : 1
+  const parsed = parseFloat(normalized.replace(/[km]$/, ''))
+  return Number.isFinite(parsed) ? parsed * multiplier : undefined
 }
 
 export function pasteToRows(
@@ -115,13 +116,13 @@ export function parseRows(
   const rows: KeywordRow[] = []
   for (const row of raw) {
     const kw = String(row[kwCol] ?? '').trim().toLowerCase()
-    const vol = parseFloat(String(row[volCol] ?? '').replace(/,/g, '')) || 0
+    const vol = parseNumber(String(row[volCol] ?? '')) ?? 0
     if (!kw) continue
     rows.push({
       keyword: kw,
       volume: vol,
-      kd:  kdCol  ? parseFloat(row[kdCol])  || undefined : undefined,
-      cpc: cpcCol ? parseFloat(row[cpcCol]) || undefined : undefined,
+      kd:  kdCol  ? parseNumber(String(row[kdCol] ?? '')) : undefined,
+      cpc: cpcCol ? parseNumber(String(row[cpcCol] ?? '')) : undefined,
       source,
     })
   }
@@ -142,7 +143,7 @@ export type FilterStats = {
 export function mergeAndFilter(
   allRows: KeywordRow[],
   minVolume = 30,
-  maxSend = 300
+  maxSend = 500
 ): { filtered: KeywordRow[]; stats: FilterStats } {
   const total = allRows.length
 
@@ -160,16 +161,31 @@ export function mergeAndFilter(
   const map = new Map<string, KeywordRow>()
   for (const row of volFiltered) {
     const existing = map.get(row.keyword)
-    if (!existing || row.volume > existing.volume) {
+    if (
+      !existing ||
+      row.volume > existing.volume ||
+      (row.volume === existing.volume && existing.kd === undefined && row.kd !== undefined)
+    ) {
       map.set(row.keyword, row)
     }
   }
   const deduped = Array.from(map.values())
   const afterDedup = deduped.length
 
-  // 3. Sort by volume desc, cap at maxSend
-  deduped.sort((a, b) => b.volume - a.volume)
-  const filtered = deduped.slice(0, maxSend)
+  const byVolume = [...deduped].sort((a, b) => b.volume - a.volume)
+  const longtailPattern = /\b(how|what|why|best|safe|extract|key points?|notes?|citations?|source reference|research paper|academic|meeting notes?|report|legal contract|multilingual|summari[sz]e|pdf to notes?)\b/i
+  const longtailSignals = deduped
+    .filter(row => longtailPattern.test(row.keyword))
+    .sort((a, b) => b.volume - a.volume)
+
+  // 3. Preserve longtail/use-case signals, then fill remaining slots by volume.
+  const selected = new Map<string, KeywordRow>()
+  for (const row of longtailSignals.slice(0, 150)) selected.set(row.keyword, row)
+  for (const row of byVolume) {
+    if (selected.size >= maxSend) break
+    selected.set(row.keyword, row)
+  }
+  const filtered = Array.from(selected.values()).sort((a, b) => b.volume - a.volume)
 
   // Brand terms = rows that survived and came from a competitor source
   const brandTerms = filtered.filter(r =>
@@ -191,13 +207,15 @@ export function mergeAndFilter(
 
 // ─── Format for AI prompt ──────────────────────────────────────────────────
 export function formatForAI(rows: KeywordRow[]): string {
-  return rows
-    .map(r => {
-      const parts = [`[${r.source}] ${r.keyword} (vol: ${r.volume}`]
-      if (r.kd  !== undefined) parts.push(`, kd: ${r.kd}`)
-      if (r.cpc !== undefined) parts.push(`, cpc: $${r.cpc}`)
-      parts.push(')')
-      return parts.join('')
-    })
+  const header = 'source\tkeyword\tvolume\tkd\tcpc'
+  const body = rows
+    .map(r => [
+      r.source,
+      r.keyword,
+      r.volume,
+      r.kd ?? '',
+      r.cpc ?? '',
+    ].join('\t'))
     .join('\n')
+  return `${header}\n${body}`
 }

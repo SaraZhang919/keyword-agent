@@ -343,7 +343,7 @@ export default function GuidePage() {
               <li>Remove keywords with volume below 30.</li>
               <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
               <li>Sort by volume descending.</li>
-              <li>Send at most 300 keywords to the LLM.</li>
+              <li>Preserve longtail/use-case signals, then send at most 500 keywords to the LLM.</li>
             </ol>
           </Card>
 

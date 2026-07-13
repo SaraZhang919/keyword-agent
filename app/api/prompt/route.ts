@@ -9,7 +9,8 @@ function isAdminAuthed(request: NextRequest): boolean {
 function supportsArticleIdeaExpansions(prompt: string): boolean {
   return (
     prompt.includes('{{TARGET_AUDIENCE}}') &&
-    prompt.includes('article_idea_expansions')
+    prompt.includes('article_idea_expansions') &&
+    prompt.includes('source, keyword, volume, kd, cpc')
   )
 }
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     !supportsArticleIdeaExpansions(prompt)
   ) {
     return NextResponse.json(
-      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, and article_idea_expansions.' },
+      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, and the source, keyword, volume, kd, cpc metric-copy rule.' },
       { status: 400 }
     )
   }

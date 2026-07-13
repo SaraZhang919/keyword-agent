@@ -5,7 +5,8 @@ import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 function supportsArticleIdeaExpansions(prompt: string): boolean {
   return (
     prompt.includes('{{TARGET_AUDIENCE}}') &&
-    prompt.includes('article_idea_expansions')
+    prompt.includes('article_idea_expansions') &&
+    prompt.includes('source, keyword, volume, kd, cpc')
   )
 }
 
@@ -15,6 +16,57 @@ function extractJsonObject(text: string): string | null {
   const end = cleaned.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) return null
   return cleaned.slice(start, end + 1)
+}
+
+type MetricRow = {
+  keyword: string
+  volume: number
+  kd?: number
+  cpc?: number
+  source: string
+}
+
+function normalizeKeyword(keyword: unknown): string {
+  return String(keyword ?? '').trim().toLowerCase()
+}
+
+function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
+  if (!result || typeof result !== 'object') return result
+
+  const byKeyword = new Map(rows.map(row => [normalizeKeyword(row.keyword), row]))
+  const data = result as Record<string, any>
+
+  function patchKeywordLike(item: unknown) {
+    if (!item || typeof item !== 'object') return
+    const target = item as Record<string, any>
+    const row = byKeyword.get(normalizeKeyword(target.keyword))
+    if (!row) return
+
+    target.keyword = row.keyword
+    target.volume = row.volume
+    if (row.kd !== undefined) target.kd = row.kd
+    if (row.cpc !== undefined) target.cpc = row.cpc
+    target.source = row.source
+  }
+
+  patchKeywordLike(data.primary_keyword)
+  for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights']) {
+    if (Array.isArray(data[key])) data[key].forEach(patchKeywordLike)
+  }
+
+  if (Array.isArray(data.new_page_opportunities)) {
+    for (const item of data.new_page_opportunities) {
+      if (!item || typeof item !== 'object') continue
+      const target = item as Record<string, any>
+      const row = byKeyword.get(normalizeKeyword(target.primary_keyword))
+      if (!row) continue
+      target.primary_keyword = row.keyword
+      target.primary_keyword_volume = row.volume
+      if (row.kd !== undefined) target.primary_keyword_kd = row.kd
+    }
+  }
+
+  return data
 }
 
 export async function POST(request: NextRequest) {
@@ -151,7 +203,10 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    return NextResponse.json({ result, stats: { ...stats, sentToAI: filtered.length } })
+    return NextResponse.json({
+      result: applyExactMetrics(result, filtered),
+      stats: { ...stats, sentToAI: filtered.length },
+    })
   } catch (err) {
     console.error('Generate error:', err)
     return NextResponse.json({ error: 'Unexpected error. Check server logs.' }, { status: 500 })

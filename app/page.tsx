@@ -234,15 +234,15 @@ function TableSection({ title, count, children }: { title: string; count: number
 
 function SupportingTable({ rows }: { rows: KeywordResult[] }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div style={{ overflowX: 'visible' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)' }}>
             {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'Intent', 'Placement', 'Flag'].map(h => (
               <th key={h} style={{
                 padding: '8px 12px', textAlign: 'left', fontSize: '10px',
                 color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+                borderBottom: '1px solid var(--border)', whiteSpace: 'normal'
               }}>{h}</th>
             ))}
           </tr>
@@ -250,14 +250,14 @@ function SupportingTable({ rows }: { rows: KeywordResult[] }) {
         <tbody>
           {rows.map((kw, i) => (
             <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', overflowWrap: 'anywhere' }}>{kw.keyword}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
               <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
               <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
               <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.intent}</td>
-              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '200px' }}>{kw.content_placement}</td>
-              <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--warn)', maxWidth: '160px' }}>{kw.flag}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', overflowWrap: 'anywhere' }}>{kw.content_placement}</td>
+              <td style={{ padding: '10px 12px', fontSize: '10px', color: 'var(--warn)', overflowWrap: 'anywhere' }}>{kw.flag}</td>
             </tr>
           ))}
         </tbody>
@@ -268,15 +268,15 @@ function SupportingTable({ rows }: { rows: KeywordResult[] }) {
 
 function LongtailTable({ rows }: { rows: KeywordResult[] }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div style={{ overflowX: 'visible' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)' }}>
             {['Keyword', 'Vol', 'KD', 'Tag', 'Trend', 'SERP', 'Content Format', 'Use Case'].map(h => (
               <th key={h} style={{
                 padding: '8px 12px', textAlign: 'left', fontSize: '10px',
                 color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+                borderBottom: '1px solid var(--border)', whiteSpace: 'normal'
               }}>{h}</th>
             ))}
           </tr>
@@ -284,14 +284,14 @@ function LongtailTable({ rows }: { rows: KeywordResult[] }) {
         <tbody>
           {rows.map((kw, i) => (
             <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', overflowWrap: 'anywhere' }}>{kw.keyword}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
               <td style={{ padding: '10px 12px' }}><KdTag tag={kw.kd_tag} /></td>
               <td style={{ padding: '10px 12px' }}><TrendBadge direction={kw.trend_direction} /></td>
               <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.serp_features}</td>
-              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.content_format}</td>
-              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', maxWidth: '160px' }}>{kw.use_case}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', overflowWrap: 'anywhere' }}>{kw.content_format}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', overflowWrap: 'anywhere' }}>{kw.use_case}</td>
             </tr>
           ))}
         </tbody>
@@ -302,15 +302,15 @@ function LongtailTable({ rows }: { rows: KeywordResult[] }) {
 
 function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div style={{ overflowX: 'visible' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--surface-2)' }}>
             {['Keyword', 'Vol', 'KD', 'Competitor Brand', 'Opportunity'].map(h => (
               <th key={h} style={{
                 padding: '8px 12px', textAlign: 'left', fontSize: '10px',
                 color: 'var(--text-muted)', letterSpacing: '0.05em', fontWeight: '500',
-                borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap'
+                borderBottom: '1px solid var(--border)', whiteSpace: 'normal'
               }}>{h}</th>
             ))}
           </tr>
@@ -318,11 +318,11 @@ function CompetitorTable({ rows }: { rows: KeywordResult[] }) {
         <tbody>
           {rows.map((kw, i) => (
             <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{kw.keyword}</td>
+              <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text)', overflowWrap: 'anywhere' }}>{kw.keyword}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.volume?.toLocaleString()}</td>
               <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{kw.kd}</td>
               <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-muted)' }}>{kw.competitor_brand ?? '—'}</td>
-              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)' }}>{kw.opportunity}</td>
+              <td style={{ padding: '10px 12px', fontSize: '11px', color: 'var(--text-dim)', overflowWrap: 'anywhere' }}>{kw.opportunity}</td>
             </tr>
           ))}
         </tbody>
@@ -920,7 +920,7 @@ export default function ToolPage() {
 
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
                 Upload CSV/XLSX with Keyword + Volume columns, or paste rows as keyword [tab] volume [tab] KD.
-                Pre-filter: removes vol &lt; 30, deduplicates, caps at 300 sent to AI.
+                Pre-filter: removes vol &lt; 30, deduplicates, preserves longtail signals, caps at 500 sent to AI.
               </p>
             </div>
 

@@ -11,6 +11,11 @@ This is a hyper-competitive niche. Many keywords with moderate KD are still domi
 INPUT FORMAT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Current app input override:
+The keyword list is a TSV table with only these guaranteed columns:
+  source, keyword, volume, kd, cpc
+Treat any older field names below as optional historical context only. If a field is not present in the TSV, it is unknown and must not be invented.
+
 Each keyword row contains:
   keyword   → the keyword itself
   intent    → Informational | Navigational | Commercial | Transactional
@@ -33,6 +38,11 @@ Important:
 - Target Audience is used ONLY for article_idea_expansions.
 - It must NOT affect primary_keyword, supporting_keywords, longtail_keywords, competitor_insights, missing_exports, page_strategy_notes, or new_page_opportunities.
 - If Target Audience is "All / Undefined" or blank, article_idea_expansions MUST be an empty array.
+- The actual keyword input is provided as a TSV table with exact columns: source, keyword, volume, kd, cpc.
+- You MUST copy keyword text, volume, kd, cpc, and source exactly from the provided TSV row whenever you output a keyword.
+- Never estimate, average, round, infer, recalculate, or replace keyword metrics from memory.
+- If a keyword metric in the TSV is blank, output 0 only where the JSON schema requires a number and explain missing data in the note or flag when relevant.
+- Do not use metrics from a different duplicate-looking keyword. The shown TSV row is the source of truth.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GLOBAL DECISION HIERARCHY
@@ -354,6 +364,12 @@ RULE 7 — CLUSTER COVERAGE:
   
 - Allow similar keywords only if search intent materially differs.
 - Adjacent-intent keywords are allowed if they match the same user outcome, even when the wording differs from the core product term.
+- For PDF summarizer / document AI pages, explicitly scan for these longtail and use-case patterns when present:
+  pdf to notes; how can I summarize a PDF file; how to extract key points from a PDF;
+  is a PDF summarizer safe; best PDF summarizer; extract key points from PDF;
+  pdf key points extractor; summarize multilingual PDF; pdf summary with citations;
+  pdf summary with source reference; summarize research paper PDF; summarize academic PDF;
+  summarize meeting notes PDF; summarize report PDF; summarize legal contract PDF.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — LONGTAIL KEYWORDS (5–15)
@@ -367,7 +383,10 @@ SELECTION PRIORITY ORDER:
   4th → Mid-term (KD40–65) + vol ≥ 200 + relevant sub-topic modifier
          Sub-topic modifiers to scan for explicitly:
          4K, 1080p, upscale, resolution, free, online, no watermark,
-         without sign up, mobile, app, extension, browser, mac, windows
+         without sign up, mobile, app, extension, browser, mac, windows,
+         notes, key points, citations, source reference, multilingual,
+         research paper, academic, meeting notes, report, legal contract,
+         safe, best, extract, pdf to notes
   5th → Mid-term (KD65–80) + vol ≥ 500 + rising trend only
   Exclude → Long-term (KD>80) longtails
   Exclude → brand:yes keywords (move to competitor_insights)
