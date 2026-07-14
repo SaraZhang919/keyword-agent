@@ -1,4 +1,5 @@
 type KeywordLike = {
+  keyword_id?: string
   keyword?: string
   volume?: number
   kd?: number
@@ -8,6 +9,7 @@ type KeywordLike = {
   cpc?: number
   density?: number
   source?: string
+  source_role?: string
   content_placement?: string
   flag?: string | null
   use_case?: string
@@ -30,6 +32,7 @@ type PageStrategyNotes = {
 type NewPageOpportunity = {
   page_title?: string
   page_type?: string
+  primary_keyword_id?: string
   primary_keyword?: string
   primary_keyword_volume?: number
   primary_keyword_kd?: number
@@ -40,6 +43,22 @@ type NewPageOpportunity = {
   product_or_function_idea?: string
   priority?: string
   difficulty_note?: string
+  source?: string
+  source_role?: string
+}
+
+type DataAudit = {
+  unsupported_ai_suggestions?: {
+    section?: string
+    keyword_id?: string | null
+    keyword?: string | null
+    reason?: string
+  }[]
+  metric_corrections_applied?: {
+    section?: string
+    keyword?: string
+    reason?: string
+  }[]
 }
 
 type ArticleIdeaExpansion = {
@@ -74,6 +93,7 @@ type StrategyReport = {
   page_strategy_notes?: PageStrategyNotes | string
   new_page_opportunities?: NewPageOpportunity[]
   article_idea_expansions?: ArticleIdeaExpansion[]
+  data_audit?: DataAudit
 }
 
 type Stats = {
@@ -137,14 +157,16 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
   lines.push('## Primary Keyword', '')
   if (primary) {
     lines.push(table(
-      ['Keyword', 'Volume', 'KD', 'Tag', 'Intent', 'Trend', 'Source', 'Validated'],
+      ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Intent', 'Trend', 'Source Role', 'Source', 'Validated'],
       [[
+        primary.keyword_id,
         primary.keyword,
         primary.volume,
         primary.kd,
         primary.kd_tag,
         primary.intent,
         primary.trend_direction,
+        primary.source_role,
         primary.source,
         primary.validated === undefined ? '-' : primary.validated ? 'Yes' : 'No',
       ]]
@@ -168,10 +190,11 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## New Page Opportunities', '')
   lines.push(table(
-    ['Page Title', 'Type', 'Primary Keyword', 'Volume', 'KD', 'Intent', 'Priority', 'Content Format'],
+    ['Page Title', 'Type', 'Primary ID', 'Primary Keyword', 'Volume', 'KD', 'Intent', 'Priority', 'Content Format'],
     (result.new_page_opportunities ?? []).map(item => [
       item.page_title,
       item.page_type,
+      item.primary_keyword_id,
       item.primary_keyword,
       item.primary_keyword_volume,
       item.primary_keyword_kd,
@@ -217,14 +240,16 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## Supporting Keywords', '')
   lines.push(table(
-    ['Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Intent', 'Placement', 'Flag'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Intent', 'Source Role', 'Placement', 'Flag'],
     (result.supporting_keywords ?? []).map(item => [
+      item.keyword_id,
       item.keyword,
       item.volume,
       item.kd,
       item.kd_tag,
       item.trend_direction,
       item.intent,
+      item.source_role,
       item.content_placement,
       item.flag,
     ])
@@ -232,13 +257,15 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## Longtail Keywords', '')
   lines.push(table(
-    ['Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'SERP', 'Content Format', 'Use Case'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Source Role', 'SERP', 'Content Format', 'Use Case'],
     (result.longtail_keywords ?? []).map(item => [
+      item.keyword_id,
       item.keyword,
       item.volume,
       item.kd,
       item.kd_tag,
       item.trend_direction,
+      item.source_role,
       item.serp_features,
       item.content_format,
       item.use_case,
@@ -247,11 +274,13 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## Competitor Insights', '')
   lines.push(table(
-    ['Keyword', 'Volume', 'KD', 'Source', 'Competitor Brand', 'Opportunity'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Source Role', 'Source', 'Competitor Brand', 'Opportunity'],
     (result.competitor_insights ?? []).map(item => [
+      item.keyword_id,
       item.keyword,
       item.volume,
       item.kd,
+      item.source_role,
       item.source,
       item.competitor_brand,
       item.opportunity,
@@ -269,6 +298,26 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
     ['Keyword', 'Reason'],
     (result.excluded_keywords ?? []).map(item => [item.keyword, item.reason])
   ))
+
+  const unsupported = result.data_audit?.unsupported_ai_suggestions ?? []
+  const corrections = result.data_audit?.metric_corrections_applied ?? []
+  if (unsupported.length || corrections.length) {
+    lines.push('## Data Audit', '')
+    if (unsupported.length) {
+      lines.push('### Unsupported AI Suggestions', '')
+      lines.push(table(
+        ['Section', 'Keyword ID', 'Keyword', 'Reason'],
+        unsupported.map(item => [item.section, item.keyword_id, item.keyword, item.reason])
+      ))
+    }
+    if (corrections.length) {
+      lines.push('### Metric Corrections Applied', '')
+      lines.push(table(
+        ['Section', 'Keyword', 'Reason'],
+        corrections.map(item => [item.section, item.keyword, item.reason])
+      ))
+    }
+  }
 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n')
 }

@@ -13,7 +13,7 @@ INPUT FORMAT
 
 Current app input override:
 The keyword list is a TSV table with only these guaranteed columns:
-  source, keyword, volume, kd, cpc
+  keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, page, topic, page_type, serp_features
 Treat any older field names below as optional historical context only. If a field is not present in the TSV, it is unknown and must not be invented.
 
 Each keyword row contains:
@@ -38,11 +38,14 @@ Important:
 - Target Audience is used ONLY for article_idea_expansions.
 - It must NOT affect primary_keyword, supporting_keywords, longtail_keywords, competitor_insights, missing_exports, page_strategy_notes, or new_page_opportunities.
 - If Target Audience is "All / Undefined" or blank, article_idea_expansions MUST be an empty array.
-- The actual keyword input is provided as a TSV table with exact columns: source, keyword, volume, kd, cpc.
-- You MUST copy keyword text, volume, kd, cpc, and source exactly from the provided TSV row whenever you output a keyword.
+- The actual keyword input is provided as a TSV table with exact columns: keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, page, topic, page_type, serp_features.
+- You MUST include keyword_id exactly from the provided TSV row whenever you output a keyword recommendation with metrics.
+- For new_page_opportunities, include primary_keyword_id exactly from the provided TSV row for the primary_keyword.
+- You MUST copy keyword text, volume, kd, cpc, source_role, and source exactly from the provided TSV row whenever you output a keyword.
 - Never estimate, average, round, infer, recalculate, or replace keyword metrics from memory.
 - If a keyword metric in the TSV is blank, output 0 only where the JSON schema requires a number and explain missing data in the note or flag when relevant.
 - Do not use metrics from a different duplicate-looking keyword. The shown TSV row is the source of truth.
+- If you suggest a keyword/topic not present in the TSV, do not attach volume, KD, CPC, density, or any metric to it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GLOBAL DECISION HIERARCHY
@@ -99,6 +102,30 @@ Important:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SOURCE TYPES — HOW TO USE EACH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Current source_role rules override older source labels:
+
+source_role:broad_match
+  Use for primary_keyword, supporting_keywords, and longtail_keywords.
+  This is the main raw keyword universe and the best source for metric-backed target keyword decisions.
+
+source_role:current_page_gap
+  Use mainly for competitor_insights, missing_exports, and current-page expansion ideas.
+  May be used for supporting/longtail only when the keyword is clearly relevant and exact metrics are copied by keyword_id.
+
+source_role:page_cluster
+  Use mainly for new_page_opportunities and page/topic cluster validation.
+  Do not let an existing page label suppress a new-page idea; judge by topic cluster, intent, task, audience, format, platform, GEO/location, or product function.
+
+source_role:custom
+  User-provided list. Use only according to the observed columns and keyword relevance.
+
+source_role:auto
+  Should rarely appear after parsing. Treat by observed fields.
+
+Metric safety:
+  Any keyword shown with volume/KD/CPC must come from a TSV row by keyword_id.
+  If keyword_id is absent or invalid, do not output metrics.
 
 source:topic
   → Core keywords directly around the main topic
@@ -521,6 +548,7 @@ STEP 8 — NEW PAGE OPPORTUNITIES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 After optimizing the current page, independently scan the full uploaded keyword set for distinct clusters that should become separate pages.
+Prioritize rows with source_role:page_cluster for this section, then validate with broad_match/current_page_gap rows when they reinforce the same topic.
 
 Purpose:
 - Keep the original page optimization first.
@@ -545,6 +573,7 @@ Page types to use:
 
 For each opportunity:
 - Use the best provided keyword as primary_keyword.
+- Include its exact primary_keyword_id from the TSV.
 - Include 2 to 5 provided supporting keywords when available.
 - Explain why this keyword cluster deserves its own page.
 - Translate the keyword pattern into a product_or_function_idea when there is a clear user job.
@@ -634,6 +663,7 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
 
 {
   "primary_keyword": {
+    "keyword_id": "string",
     "keyword": "string",
     "volume": 0,
     "kd": 0,
@@ -643,12 +673,14 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
     "cpc": 0,
     "density": 0,
     "source": "topic | related | competitor",
+    "source_role": "string",
     "combined_signal": "string",
     "validated": true,
     "note": "string — full reasoning following the decision tree"
   },
   "supporting_keywords": [
     {
+      "keyword_id": "string",
       "keyword": "string",
       "volume": 0,
       "kd": 0,
@@ -658,18 +690,21 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
       "cpc": 0,
       "density": 0,
       "source": "string",
+      "source_role": "string",
       "content_placement": "string",
       "flag": "string | null"
     }
   ],
   "longtail_keywords": [
     {
+      "keyword_id": "string",
       "keyword": "string",
       "volume": 0,
       "kd": 0,
       "kd_tag": "string",
       "trend_direction": "Rising | Stable | Declining | Insufficient Data",
       "source": "string",
+      "source_role": "string",
       "serp_features": "string",
       "content_format": "string",
       "use_case": "string"
@@ -677,10 +712,12 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
   ],
   "competitor_insights": [
     {
+      "keyword_id": "string",
       "keyword": "string",
       "volume": 0,
       "kd": 0,
       "source": "string",
+      "source_role": "string",
       "competitor_brand": "string | null",
       "opportunity": "string"
     }
@@ -706,6 +743,7 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
     {
       "page_title": "string",
       "page_type": "Blog Post | Feature Page | Online Tool Page | Comparison Page | Use-case Page | GEO Page | Template/Resource Page | Docs Page",
+      "primary_keyword_id": "string",
       "primary_keyword": "string",
       "primary_keyword_volume": 0,
       "primary_keyword_kd": 0,

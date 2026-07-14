@@ -10,7 +10,8 @@ function supportsArticleIdeaExpansions(prompt: string): boolean {
   return (
     prompt.includes('{{TARGET_AUDIENCE}}') &&
     prompt.includes('article_idea_expansions') &&
-    prompt.includes('source, keyword, volume, kd, cpc')
+    prompt.includes('keyword_id') &&
+    prompt.includes('source_role')
   )
 }
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     !supportsArticleIdeaExpansions(prompt)
   ) {
     return NextResponse.json(
-      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, and the source, keyword, volume, kd, cpc metric-copy rule.' },
+      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, keyword_id, and source_role rules.' },
       { status: 400 }
     )
   }

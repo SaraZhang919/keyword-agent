@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI } from '@/lib/prefilter'
+import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI, type SourceRole } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 function supportsArticleIdeaExpansions(prompt: string): boolean {
   return (
     prompt.includes('{{TARGET_AUDIENCE}}') &&
     prompt.includes('article_idea_expansions') &&
-    prompt.includes('source, keyword, volume, kd, cpc')
+    prompt.includes('keyword_id') &&
+    prompt.includes('source_role')
   )
 }
 
@@ -19,10 +20,12 @@ function extractJsonObject(text: string): string | null {
 }
 
 type MetricRow = {
+  keyword_id?: string
   keyword: string
   volume: number
   kd?: number
   cpc?: number
+  source_role?: SourceRole
   source: string
 }
 
@@ -33,37 +36,108 @@ function normalizeKeyword(keyword: unknown): string {
 function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
   if (!result || typeof result !== 'object') return result
 
+  const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
   const byKeyword = new Map(rows.map(row => [normalizeKeyword(row.keyword), row]))
   const data = result as Record<string, any>
+  const unsupported: Array<Record<string, any>> = []
+  const corrections: Array<Record<string, any>> = []
 
-  function patchKeywordLike(item: unknown) {
-    if (!item || typeof item !== 'object') return
+  function patchKeywordLike(item: unknown, section: string) {
+    if (!item || typeof item !== 'object') return false
     const target = item as Record<string, any>
-    const row = byKeyword.get(normalizeKeyword(target.keyword))
-    if (!row) return
+    const rowById = typeof target.keyword_id === 'string' ? byId.get(target.keyword_id) : undefined
+    const rowByKeyword = byKeyword.get(normalizeKeyword(target.keyword))
+    const row = rowById ?? rowByKeyword
+    if (!row) {
+      unsupported.push({
+        section,
+        keyword_id: target.keyword_id ?? null,
+        keyword: target.keyword ?? target.primary_keyword ?? null,
+        reason: 'No matching uploaded/pasted keyword row.',
+      })
+      target.volume = 0
+      target.kd = 0
+      target.cpc = 0
+      target.source = 'unsupported_ai_suggestion'
+      target.source_role = 'unsupported'
+      if (typeof target.note === 'string') {
+        target.note = `${target.note} Metrics removed because no uploaded/pasted keyword row matched this suggestion.`
+      } else if (typeof target.flag === 'string') {
+        target.flag = `${target.flag}; metrics removed because no uploaded/pasted keyword row matched this suggestion.`
+      } else {
+        target.note = 'Unsupported AI suggestion. Metrics removed because no uploaded/pasted keyword row matched this keyword.'
+      }
+      return false
+    }
 
+    if (!rowById && rowByKeyword) {
+      corrections.push({
+        section,
+        keyword: row.keyword,
+        reason: 'Matched by exact keyword text because keyword_id was missing or invalid.',
+      })
+    }
+
+    target.keyword_id = row.keyword_id
     target.keyword = row.keyword
     target.volume = row.volume
-    if (row.kd !== undefined) target.kd = row.kd
-    if (row.cpc !== undefined) target.cpc = row.cpc
+    target.kd = row.kd ?? 0
+    target.cpc = row.cpc ?? 0
     target.source = row.source
+    target.source_role = row.source_role
+    return true
   }
 
-  patchKeywordLike(data.primary_keyword)
+  patchKeywordLike(data.primary_keyword, 'primary_keyword')
   for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights']) {
-    if (Array.isArray(data[key])) data[key].forEach(patchKeywordLike)
+    if (Array.isArray(data[key])) {
+      data[key] = data[key].filter((item: unknown) => patchKeywordLike(item, key))
+    }
   }
 
   if (Array.isArray(data.new_page_opportunities)) {
     for (const item of data.new_page_opportunities) {
       if (!item || typeof item !== 'object') continue
       const target = item as Record<string, any>
-      const row = byKeyword.get(normalizeKeyword(target.primary_keyword))
-      if (!row) continue
+      const rowById = typeof target.primary_keyword_id === 'string' ? byId.get(target.primary_keyword_id) : undefined
+      const rowByKeyword = byKeyword.get(normalizeKeyword(target.primary_keyword))
+      const row = rowById ?? rowByKeyword
+      if (!row) {
+        unsupported.push({
+          section: 'new_page_opportunities',
+          keyword_id: target.primary_keyword_id ?? null,
+          keyword: target.primary_keyword ?? null,
+          reason: 'No matching uploaded/pasted keyword row for page opportunity primary keyword.',
+        })
+        delete target.primary_keyword_volume
+        delete target.primary_keyword_kd
+        target.source = 'unsupported_ai_suggestion'
+        target.source_role = 'unsupported'
+        target.difficulty_note = [
+          target.difficulty_note,
+          'Metrics removed because no uploaded/pasted keyword row matched this page opportunity primary keyword.',
+        ].filter(Boolean).join(' ')
+        continue
+      }
+      target.primary_keyword_id = row.keyword_id
       target.primary_keyword = row.keyword
       target.primary_keyword_volume = row.volume
-      if (row.kd !== undefined) target.primary_keyword_kd = row.kd
+      target.primary_keyword_kd = row.kd ?? 0
+      target.source = row.source
+      target.source_role = row.source_role
+      if (!rowById && rowByKeyword) {
+        corrections.push({
+          section: 'new_page_opportunities',
+          keyword: row.keyword,
+          reason: 'Matched by exact keyword text because primary_keyword_id was missing or invalid.',
+        })
+      }
     }
+  }
+
+  data.data_audit = {
+    unsupported_ai_suggestions: unsupported,
+    metric_corrections_applied: corrections,
   }
 
   return data
@@ -99,12 +173,14 @@ export async function POST(request: NextRequest) {
     for (const [key, value] of fileEntries) {
       const file = value as File
       const labelKey = key.replace('_file', '_label')
+      const roleKey = key.replace('_file', '_role')
       const label = (formData.get(labelKey) as string) || key.replace('_file', '').replace(/_/g, ' ')
+      const role = ((formData.get(roleKey) as string) || 'auto') as SourceRole
 
       const { rows: rawRows, error: fileError } = await fileToRows(file)
       if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
 
-      const { rows, error: parseError } = parseRows(rawRows, label)
+      const { rows, error: parseError } = parseRows(rawRows, label, role)
       if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
 
       allRows.push(...rows)
@@ -112,8 +188,10 @@ export async function POST(request: NextRequest) {
 
     for (const [key, value] of pasteEntries) {
       const labelKey = key.replace('_paste', '_label')
+      const roleKey = key.replace('_paste', '_role')
       const label = (formData.get(labelKey) as string) || key.replace('_paste', '').replace(/_/g, ' ')
-      const { rows, error: pasteError } = pasteToRows(value as string, label)
+      const role = ((formData.get(roleKey) as string) || 'custom') as SourceRole
+      const { rows, error: pasteError } = pasteToRows(value as string, label, role)
       if (pasteError) return NextResponse.json({ error: pasteError }, { status: 400 })
       allRows.push(...rows)
     }

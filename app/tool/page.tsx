@@ -8,11 +8,15 @@ import { downloadMarkdownReport } from '@/lib/markdownReport'
 type Section = {
   id: number
   label: string
+  role: SourceRole
   file: File | null
   paste: string
 }
 
+type SourceRole = 'auto' | 'broad_match' | 'current_page_gap' | 'page_cluster' | 'custom'
+
 interface KeywordResult extends Record<string, unknown> {
+  keyword_id?: string
   keyword: string
   volume: number
   kd: number
@@ -22,6 +26,7 @@ interface KeywordResult extends Record<string, unknown> {
   cpc?: number
   density?: number
   source?: string
+  source_role?: string
   content_placement?: string
   flag?: string | null
   use_case?: string
@@ -49,6 +54,7 @@ interface MissingExport {
 interface NewPageOpportunity {
   page_title: string
   page_type: string
+  primary_keyword_id?: string
   primary_keyword: string
   primary_keyword_volume?: number
   primary_keyword_kd?: number
@@ -59,6 +65,8 @@ interface NewPageOpportunity {
   product_or_function_idea?: string
   priority?: 'High' | 'Medium' | 'Low' | string
   difficulty_note?: string
+  source?: string
+  source_role?: string
 }
 
 interface ArticleIdeaExpansion {
@@ -88,6 +96,21 @@ interface StrategyResult {
   page_strategy_notes: PageStrategyNotes | string
   new_page_opportunities?: NewPageOpportunity[]
   article_idea_expansions?: ArticleIdeaExpansion[]
+  data_audit?: DataAudit
+}
+
+interface DataAudit {
+  unsupported_ai_suggestions?: {
+    section?: string
+    keyword_id?: string | null
+    keyword?: string | null
+    reason?: string
+  }[]
+  metric_corrections_applied?: {
+    section?: string
+    keyword?: string
+    reason?: string
+  }[]
 }
 
 interface Stats {
@@ -96,6 +119,7 @@ interface Stats {
   afterDedup: number
   sentToAI: number
   bySource?: Record<string, number>
+  bySourceRole?: Record<string, number>
 }
 
 const MAX_SECTIONS = 5
@@ -116,6 +140,14 @@ const AUDIENCE_OPTIONS = [
   'Accountants / AP teams',
   'Data-sensitive teams',
   'Custom audience',
+]
+
+const SOURCE_ROLE_OPTIONS: { value: SourceRole; label: string }[] = [
+  { value: 'auto', label: 'Auto-detect' },
+  { value: 'broad_match', label: 'Broad Match Keywords' },
+  { value: 'current_page_gap', label: 'Current Page / Competitor Gap' },
+  { value: 'page_cluster', label: 'Page Cluster / Page Opportunities' },
+  { value: 'custom', label: 'Custom Keyword List' },
 ]
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -151,25 +183,36 @@ function StatBadge({ label, value, accent }: { label: string; value: number; acc
 }
 
 function SectionRow({
-  section, index, canRemove, inputRef, onLabelChange, onFileChange, onPasteChange, onRemove
+  section, index, canRemove, inputRef, onLabelChange, onRoleChange, onFileChange, onPasteChange, onRemove
 }: {
   section: Section
   index: number
   canRemove: boolean
   inputRef: (el: HTMLInputElement | null) => void
   onLabelChange: (v: string) => void
+  onRoleChange: (v: SourceRole) => void
   onFileChange: (f: File | null) => void
   onPasteChange: (v: string) => void
   onRemove: () => void
 }) {
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '200px 1fr auto', gap: '10px',
+      display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(220px, 1fr) minmax(220px, 1.5fr) auto', gap: '10px',
       alignItems: 'center', background: 'var(--surface)',
       border: '1px solid var(--border)', borderRadius: '4px', padding: '12px 14px',
     }}>
       <input type="text" value={section.label} onChange={e => onLabelChange(e.target.value)}
         placeholder={`Section ${index + 1} name`} style={{ padding: '7px 10px', fontSize: '12px' }} />
+      <select
+        value={section.role}
+        onChange={e => onRoleChange(e.target.value as SourceRole)}
+        title="Choose how this source should influence the strategy"
+        style={{ padding: '7px 10px', fontSize: '12px' }}
+      >
+        {SOURCE_ROLE_OPTIONS.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <label style={{
           display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -199,7 +242,7 @@ function SectionRow({
         placeholder="Or paste keyword rows: keyword [tab] volume [tab] KD"
         rows={3}
         style={{
-          gridColumn: '2 / 4',
+          gridColumn: '2 / 5',
           width: '100%',
           padding: '8px 10px',
           fontSize: '11px',
@@ -446,6 +489,33 @@ function ArticleIdeaExpansions({ rows }: { rows: ArticleIdeaExpansion[] }) {
   )
 }
 
+function DataAuditNotice({ audit }: { audit?: DataAudit }) {
+  const unsupported = audit?.unsupported_ai_suggestions ?? []
+  const corrections = audit?.metric_corrections_applied ?? []
+  if (!unsupported.length && !corrections.length) return null
+
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--warn)', borderRadius: '6px',
+      padding: '14px 20px', marginBottom: '16px'
+    }}>
+      <div style={{ fontSize: '10px', color: 'var(--warn)', letterSpacing: '0.1em', marginBottom: '8px' }}>
+        DATA AUDIT
+      </div>
+      {unsupported.length > 0 && (
+        <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          Removed {unsupported.length} AI suggestion{unsupported.length === 1 ? '' : 's'} because no matching uploaded/pasted keyword row was found.
+        </p>
+      )}
+      {corrections.length > 0 && (
+        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          Corrected {corrections.length} item{corrections.length === 1 ? '' : 's'} by exact keyword match when the AI missed or returned an invalid keyword ID.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function ToolPage() {
   const router = useRouter()
   const fileRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -455,9 +525,9 @@ export default function ToolPage() {
   const [targetAudience, setTargetAudience] = useState('All / Undefined')
   const [customTargetAudience, setCustomTargetAudience] = useState('')
   const [sections, setSections] = useState<Section[]>([
-    { id: 0, label: 'Topic Keywords',      file: null, paste: '' },
-    { id: 1, label: 'Related Keywords',    file: null, paste: '' },
-    { id: 2, label: 'Competitor Keywords', file: null, paste: '' },
+    { id: 0, label: 'Broad Match Keywords', file: null, paste: '', role: 'broad_match' },
+    { id: 1, label: 'Current Page / Competitor Gap', file: null, paste: '', role: 'current_page_gap' },
+    { id: 2, label: 'Page Cluster / Page Opportunities', file: null, paste: '', role: 'page_cluster' },
   ])
 
   const [loading, setLoading] = useState(false)
@@ -489,7 +559,7 @@ export default function ToolPage() {
 
   function addSection() {
     if (sections.length >= MAX_SECTIONS) return
-    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null, paste: '' }])
+    setSections(prev => [...prev, { id: Date.now(), label: `Section ${prev.length + 1}`, file: null, paste: '', role: 'auto' }])
   }
 
   function removeSection(id: number) {
@@ -498,6 +568,10 @@ export default function ToolPage() {
 
   function updateLabel(id: number, label: string) {
     setSections(prev => prev.map(s => s.id === id ? { ...s, label } : s))
+  }
+
+  function updateRole(id: number, role: SourceRole) {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, role } : s))
   }
 
   function updateFile(id: number, file: File | null) {
@@ -532,6 +606,7 @@ export default function ToolPage() {
       if (!section.file && !section.paste.trim()) continue
       const key = section.label.toLowerCase().replace(/\s+/g, '_')
       formData.append(`${key}_label`, section.label)
+      formData.append(`${key}_role`, section.role)
       if (section.file) formData.append(`${key}_file`, section.file)
       if (section.paste.trim()) formData.append(`${key}_paste`, section.paste.trim())
     }
@@ -617,7 +692,7 @@ export default function ToolPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: '780px', margin: '0 auto', padding: '36px 24px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '36px 24px' }}>
 
         {result ? (
           <div className="fade-up">
@@ -651,6 +726,8 @@ export default function ToolPage() {
                 color: copied ? 'var(--accent)' : 'var(--text-muted)', padding: '6px 14px', fontSize: '11px'
               }}>{copied ? '✓ Copied' : 'Copy JSON'}</button>
             </div>
+
+            <DataAuditNotice audit={result.data_audit} />
 
             {/* Primary Keyword */}
             <div style={{
@@ -911,6 +988,7 @@ export default function ToolPage() {
                     canRemove={sections.length > 1}
                     inputRef={el => { fileRefs.current[i] = el }}
                     onLabelChange={label => updateLabel(section.id, label)}
+                    onRoleChange={role => updateRole(section.id, role)}
                     onFileChange={file => updateFile(section.id, file)}
                     onPasteChange={paste => updatePaste(section.id, paste)}
                     onRemove={() => removeSection(section.id)}
@@ -920,7 +998,8 @@ export default function ToolPage() {
 
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
                 Upload CSV/XLSX with Keyword + Volume columns, or paste rows as keyword [tab] volume [tab] KD.
-                Pre-filter: removes vol &lt; 30, deduplicates, preserves longtail signals, caps at 500 sent to AI.
+                Choose a source role so the AI uses broad match, current-page gap, and page-cluster data for the right decisions.
+                Pre-filter: parses all workbook sheets, removes vol &lt; 30, deduplicates, preserves longtail signals, caps at 500 sent to AI.
               </p>
             </div>
 

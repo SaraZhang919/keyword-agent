@@ -13,7 +13,8 @@ const decisionPatterns = [
     title: 'Primary Keyword',
     pattern: 'Choose the strongest realistic target keyword for the current page. The submitted keyword is only a candidate, not automatically the final target.',
     criteria: [
-      'Reject brand terms and competitor-source keywords as primary targets.',
+      'Use broad_match rows first; every metric-backed choice must include a valid keyword_id from parsed data.',
+      'Reject brand terms and current_page_gap competitor keywords as primary targets unless the page type is explicitly a comparison/blog angle.',
       'Judge intent fit first: the searcher goal must match what the selected page type can satisfy.',
       'Judge page-type fit using floors: Tool 500+ volume with transactional/commercial intent; Feature 200+ commercial intent; Blog 100+ informational/commercial intent; GEO 50+ with location modifier; Docs 30+ informational intent.',
       'Prefer the highest-volume keyword that still has realistic ranking potential for DA<30.',
@@ -28,11 +29,12 @@ const decisionPatterns = [
     title: 'Supporting Keywords',
     pattern: 'Find 5-10 same-page keywords that deepen the current page, not separate future pages.',
     criteria: [
-      'Exclude brand terms and all source:competitor terms.',
+      'Use broad_match rows first; current_page_gap rows can support only when they exactly match the current page job.',
+      'Exclude brand terms and competitor-gap terms from same-page support unless the page is a comparison/blog page.',
       'Prioritize Priority KD<40 keywords.',
       'Allow at most 2 Mid-term KD40-80 keywords, only if volume is strong and intent/page fit justify difficulty.',
       'Exclude Long-term KD>80 keywords.',
-      'Prefer topic-source terms first, then related-source terms for semantic depth.',
+      'Prefer exact page-relevant broad_match terms first, then custom rows when they add semantic depth.',
       'Keep keywords close enough to fit naturally into page sections, FAQs, feature blocks, or comparison notes.',
       'Avoid keywords that imply a different product class or a separate page intent.',
     ],
@@ -42,6 +44,7 @@ const decisionPatterns = [
     title: 'Longtail Keywords',
     pattern: 'Select 5-15 narrower searches the current page can answer without becoming a separate page.',
     criteria: [
+      'Use broad_match rows first, then current_page_gap rows for unanswered current-page questions or competitor coverage.',
       'Prefer question, how-to, use-case, tutorial, SERP-feature, and specific workflow queries.',
       'Informational longtails can win even with slightly worse KD if Featured Snippet, People Also Ask, or AI Overview opportunity is strong.',
       'Competitor/brand longtails are allowed only for Blog comparison, alternative, or migration intent.',
@@ -54,8 +57,9 @@ const decisionPatterns = [
     title: 'New Page Opportunities',
     pattern: 'Scan all keywords for clusters that deserve their own future page, independent of the current page.',
     criteria: [
+      'Prioritize page_cluster rows because they contain Page, Topic, or Page type context.',
       'Cluster by topic, intent, user task, audience, content format, platform, or product/function signal.',
-      'Use the best provided keyword as the page primary keyword; do not invent keyword metrics.',
+      'Use the best provided keyword as the page primary keyword and include primary_keyword_id; do not invent keyword metrics.',
       'Include 2-5 provided supporting keywords when available.',
       'Suggest page types such as Blog Post, Feature Page, Online Tool Page, Comparison Page, Use-case Page, GEO Page, Template/Resource Page, or Docs Page.',
       'Explain why the cluster deserves its own page instead of being folded into the current page.',
@@ -81,8 +85,8 @@ const decisionPatterns = [
     title: 'Competitor Insights',
     pattern: 'Move competitor or brand demand into a separate strategy insight area.',
     criteria: [
-      'source:competitor keywords are discovery signals, not primary SEO targets.',
-      'Never use competitor-source keywords as primary or supporting keywords.',
+      'current_page_gap rows with competitor domain columns are discovery signals, not default primary SEO targets.',
+      'Never use competitor-gap rows as primary or supporting keywords unless the page type and intent justify a comparison/alternative page.',
       'Never use brand:yes keywords as primary or supporting keywords.',
       'Use competitor keywords to reveal demand around alternatives, comparisons, migration, and future blog/comparison pages.',
       'Allow competitor/brand terms in longtail only for Blog comparison or alternative pages, and flag them clearly.',
@@ -122,7 +126,7 @@ const globalRankingRules = [
   'KD',
   'Density',
   'Trend direction',
-  'Source type',
+  'Source role',
   'SERP feature opportunity',
 ]
 
@@ -133,6 +137,7 @@ const metricRules = [
   'Density <0.3 is low paid competition; 0.3-0.6 is moderate; >0.6 is high commercial saturation.',
   'High density is not automatic exclusion, but it matters more for transactional and commercial pages.',
   'Trend is Rising when recent average is more than 10% above early average; Declining when more than 10% below; otherwise Stable.',
+  'Any keyword metric shown in the UI must come from a parsed row by keyword_id; unsupported AI ideas have metrics removed.',
 ]
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -325,7 +330,7 @@ export default function GuidePage() {
               <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
                 <SmallLabel>File upload</SmallLabel>
                 <p style={{ margin: '6px 0 0', color: 'var(--text-dim)' }}>
-                  CSV/XLSX exports with Keyword and Volume columns. Optional KD and CPC columns are used when present.
+                  CSV/XLSX exports with Keyword and Volume columns. All valid workbook sheets are parsed. Optional KD, CPC, competition, intent, SERP, page, topic, and page type columns are used when present.
                 </p>
               </div>
               <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
@@ -335,13 +340,24 @@ export default function GuidePage() {
                 </p>
               </div>
             </div>
+            <div style={{ marginTop: '12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
+              <SmallLabel>Source roles</SmallLabel>
+              <p style={{ margin: '6px 0 0', color: 'var(--text-dim)' }}>
+                Each upload/paste section has a role: Broad Match Keywords, Current Page / Competitor Gap,
+                Page Cluster / Page Opportunities, Custom Keyword List, or Auto-detect.
+                Auto-detect uses headers like Page/Topic/Page type for page clusters, competitor domain columns plus KD% for gap data,
+                and Intent/Trend/Keyword Difficulty/SERP Features for broad-match exports.
+              </p>
+            </div>
           </Card>
 
           <Card title="Pre-Filter Logic">
             <ol style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-dim)' }}>
-              <li>Merge all uploaded and pasted keyword rows under their section labels.</li>
+              <li>Parse all valid CSV/XLSX sheets and pasted rows under their section labels and source roles.</li>
+              <li>Normalize column aliases: KD/KD%/Keyword Difficulty/Difficulty, Volume/Search Volume/Avg. Monthly Searches, and Com./Competitive Density.</li>
               <li>Remove keywords with volume below 30.</li>
               <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
+              <li>Assign stable keyword_id values after filtering and sorting.</li>
               <li>Sort by volume descending.</li>
               <li>Preserve longtail/use-case signals, then send at most 500 keywords to the LLM.</li>
             </ol>
@@ -353,7 +369,7 @@ export default function GuidePage() {
               gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
               gap: '10px',
             }}>
-              {['Form inputs', 'Merged keyword list', 'Active prompt', 'OpenAI JSON result', 'UI + Markdown report'].map((step, i) => (
+              {['Form inputs + source roles', 'Merged keyword list + IDs', 'Active prompt', 'OpenAI JSON result', 'Metric audit + UI/report'].map((step, i) => (
                 <div key={step} style={{
                   background: 'var(--surface-2)',
                   border: '1px solid var(--border)',
@@ -423,6 +439,8 @@ export default function GuidePage() {
               <li>Use Admin to change the prompt; this guide is read-only.</li>
               <li>If article ideas do not appear, check that Target Audience is not All / Undefined.</li>
               <li>If new page opportunities are weak, tune cluster rules around intent, task, format, platform, audience, or product function.</li>
+              <li>If metrics look wrong, inspect source roles and keyword_id matching first. The API now removes metrics from AI suggestions that do not match parsed raw data.</li>
+              <li>If a file type is classified incorrectly, change the section role manually before running the analysis.</li>
             </ul>
           </Card>
 
