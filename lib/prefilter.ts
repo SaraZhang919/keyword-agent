@@ -39,9 +39,107 @@ const TRUST_PATTERN = /\b(accurate|best|safe|secure|private|privacy|alternative|
 const USE_CASE_PATTERN = /\b(academic|business|contract|enterprise|legal|meeting|report|research|student|teacher|team|work|workflow)\b/i
 const QUESTION_PATTERN = /\b(how|what|why|when|where|which|can|is|are|does|do)\b/i
 const PLATFORM_FORMAT_PATTERN = /\b(android|api|browser|caption|captions|chrome|csv|desktop|docx|excel|extension|ios|iphone|mac|mobile|notes?|pdf|png|ppt|sheets|summary|summaries|transcript|transcripts|windows|word|xlsx)\b/i
+const DEFINITION_PATTERN = /\b(meaning|definition|stand for|stands for|what does .+ mean|what is .+ meaning)\b/i
+const STOP_TOKENS = new Set([
+  'a', 'an', 'and', 'app', 'apps', 'ai', 'best', 'free', 'for', 'from', 'in', 'no',
+  'of', 'online', 'or', 'sign', 'the', 'to', 'tool', 'tools', 'up', 'with', 'without',
+])
+const GENERIC_PRODUCT_TOKENS = new Set([
+  'assistant', 'builder', 'checker', 'converter', 'editor', 'extractor', 'finder',
+  'generator', 'maker', 'reader', 'scanner', 'summariser', 'summarizer', 'summary',
+  'template',
+])
+const FORMAT_GROUPS: Record<string, string[]> = {
+  document: ['pdf', 'doc', 'docx', 'document', 'documents', 'file', 'files', 'paper', 'report', 'contract'],
+  video: ['video', 'videos', 'youtube', 'tiktok', 'reels', 'shorts', 'mp4'],
+  image: ['image', 'images', 'photo', 'photos', 'picture', 'pictures', 'png', 'jpg', 'jpeg'],
+  audio: ['audio', 'podcast', 'voice', 'mp3', 'transcript', 'transcription'],
+}
 
 function tokenCount(keyword: string): number {
   return keyword.split(/\s+/).filter(Boolean).length
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function primaryContext(primaryKeyword?: string, pageType?: string) {
+  const primaryTokens = tokenize(primaryKeyword ?? '')
+  const coreTokens = primaryTokens.filter(token => !STOP_TOKENS.has(token) && !GENERIC_PRODUCT_TOKENS.has(token))
+  const fallbackTokens = primaryTokens.filter(token => !STOP_TOKENS.has(token))
+  return {
+    primaryKeyword: (primaryKeyword ?? '').trim().toLowerCase(),
+    pageType: (pageType ?? '').trim().toLowerCase(),
+    tokens: new Set(coreTokens.length ? coreTokens : fallbackTokens),
+    allTokens: new Set(fallbackTokens),
+    groups: formatGroupsForText(primaryKeyword ?? ''),
+    definitionIntent: DEFINITION_PATTERN.test(primaryKeyword ?? ''),
+  }
+}
+
+function rowText(row: KeywordRow): string {
+  return `${row.keyword} ${row.page ?? ''} ${row.topic ?? ''} ${row.page_type ?? ''} ${row.source ?? ''}`
+}
+
+function formatGroupsForText(text: string): Set<string> {
+  const tokens = new Set(tokenize(text))
+  const groups = new Set<string>()
+  for (const [group, terms] of Object.entries(FORMAT_GROUPS)) {
+    if (terms.some(term => tokens.has(term))) groups.add(group)
+  }
+  return groups
+}
+
+type KeywordContext = ReturnType<typeof primaryContext>
+
+function relevanceScore(row: KeywordRow, context: KeywordContext): number {
+  if (context.tokens.size === 0) return 0.5
+
+  const text = rowText(row)
+  const tokens = new Set(tokenize(text))
+  let overlap = 0
+  for (const token of context.tokens) {
+    if (tokens.has(token)) overlap += 1
+  }
+
+  let score = overlap / context.tokens.size
+  if (context.primaryKeyword && text.toLowerCase().includes(context.primaryKeyword)) score += 0.35
+  if (row.keyword.includes(context.primaryKeyword) || context.primaryKeyword.includes(row.keyword)) score += 0.2
+  if (row.source_role === 'broad_match' && overlap > 0) score += 0.12
+  if (row.source_role === 'page_cluster' && overlap > 0 && (row.page || row.topic)) score += 0.1
+  return Math.min(score, 1)
+}
+
+function hasFormatDrift(row: KeywordRow, context: KeywordContext): boolean {
+  if (context.groups.size === 0) return false
+  const keywordGroups = formatGroupsForText(row.keyword)
+  if (keywordGroups.size > 0) {
+    let keywordSharesGroup = false
+    for (const group of keywordGroups) {
+      if (context.groups.has(group)) keywordSharesGroup = true
+    }
+    if (!keywordSharesGroup) return true
+  }
+
+  const groups = formatGroupsForText(rowText(row))
+  if (groups.size === 0) return false
+
+  let hasSharedGroup = false
+  for (const group of groups) {
+    if (context.groups.has(group)) hasSharedGroup = true
+  }
+  return !hasSharedGroup
+}
+
+function hasDefinitionDrift(row: KeywordRow, context: KeywordContext): boolean {
+  if (context.definitionIntent) return false
+  if (!DEFINITION_PATTERN.test(rowText(row))) return false
+  return true
 }
 
 function logVolumeScore(volume: number, maxVolume: number): number {
@@ -90,7 +188,7 @@ function roleScore(role: SourceRole): number {
   return 0
 }
 
-function opportunityScore(row: KeywordRow, maxVolume: number): number {
+function opportunityScore(row: KeywordRow, maxVolume: number, context: KeywordContext): number {
   const volume = logVolumeScore(row.volume, maxVolume)
   const kd = kdScore(row.kd)
   const intent = intentScore(row.intent)
@@ -99,16 +197,22 @@ function opportunityScore(row: KeywordRow, maxVolume: number): number {
   const competitionSignal = row.competition !== undefined && row.competition > 0 ? 0.04 : 0
   const serpSignal = row.serp_features ? 0.06 : 0
   const clusterSignal = row.topic || row.page || row.page_type ? 0.08 : 0
+  const relevance = relevanceScore(row, context)
+  const driftPenalty = hasFormatDrift(row, context) ? 0.65 : 0
+  const definitionPenalty = hasDefinitionDrift(row, context) ? 0.45 : 0
 
   return (
     volume * 0.28 +
     kd * 0.24 +
     intent * 0.16 +
+    relevance * 0.3 +
     modifiers +
     role +
     competitionSignal +
     serpSignal +
-    clusterSignal
+    clusterSignal -
+    driftPenalty -
+    definitionPenalty
   )
 }
 
@@ -322,11 +426,24 @@ export type FilterStats = {
   bySourceRole: Record<string, number>
 }
 
+export type MergeAndFilterOptions = {
+  primaryKeyword?: string
+  pageType?: string
+  minVolume?: number
+  maxSend?: number
+}
+
 export function mergeAndFilter(
   allRows: KeywordRow[],
-  minVolume = 30,
-  maxSend = 500
+  optionsOrMinVolume: MergeAndFilterOptions | number = 30,
+  legacyMaxSend = 500
 ): { filtered: KeywordRow[]; stats: FilterStats } {
+  const options = typeof optionsOrMinVolume === 'number'
+    ? { minVolume: optionsOrMinVolume, maxSend: legacyMaxSend }
+    : optionsOrMinVolume
+  const minVolume = options.minVolume ?? 30
+  const maxSend = options.maxSend ?? 500
+  const context = primaryContext(options.primaryKeyword, options.pageType)
   const total = allRows.length
 
   const bySource: Record<string, number> = {}
@@ -354,45 +471,54 @@ export function mergeAndFilter(
 
   const deduped = Array.from(map.values())
   const afterDedup = deduped.length
-  const maxVolume = Math.max(...deduped.map(row => row.volume), 0)
-  const byVolume = [...deduped].sort((a, b) => b.volume - a.volume)
-  const byOpportunity = [...deduped].sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
-  const lowKdOpportunities = deduped
+  const eligible = deduped.filter(row => {
+    if (hasFormatDrift(row, context)) return false
+    if (hasDefinitionDrift(row, context)) return false
+    return true
+  })
+  const pool = eligible.length ? eligible : deduped
+  const maxVolume = Math.max(...pool.map(row => row.volume), 0)
+  const byVolume = [...pool].sort((a, b) => b.volume - a.volume)
+  const byOpportunity = [...pool].sort((a, b) => opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context))
+  const lowKdOpportunities = pool
     .filter(row => {
       const hasLowKd = row.kd !== undefined && row.kd < 40
       const hasSpecificity = tokenCount(row.keyword) >= 3
       const hasModifier = modifierScore(row) >= 0.2
-      return hasLowKd && (hasSpecificity || hasModifier)
+      return hasLowKd && relevanceScore(row, context) >= 0.25 && (hasSpecificity || hasModifier)
     })
     .sort((a, b) => {
       const volumeBandA = a.volume >= 100 ? 1 : 0
       const volumeBandB = b.volume >= 100 ? 1 : 0
       const bandDelta = volumeBandB - volumeBandA
-      return bandDelta || b.volume - a.volume || opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume)
+      return bandDelta || b.volume - a.volume || opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context)
     })
-  const placementSignals = deduped
+  const placementSignals = pool
     .filter(row => {
       const text = `${row.keyword} ${row.page ?? ''} ${row.topic ?? ''} ${row.page_type ?? ''}`
       return (
-        TASK_PATTERN.test(text) ||
-        TOOL_PATTERN.test(text) ||
-        ACCESS_PATTERN.test(text) ||
-        TRUST_PATTERN.test(text) ||
-        USE_CASE_PATTERN.test(text) ||
-        QUESTION_PATTERN.test(text) ||
-        PLATFORM_FORMAT_PATTERN.test(text)
+        relevanceScore(row, context) >= 0.25 &&
+        (
+          TASK_PATTERN.test(text) ||
+          TOOL_PATTERN.test(text) ||
+          ACCESS_PATTERN.test(text) ||
+          TRUST_PATTERN.test(text) ||
+          USE_CASE_PATTERN.test(text) ||
+          QUESTION_PATTERN.test(text) ||
+          PLATFORM_FORMAT_PATTERN.test(text)
+        )
       )
     })
-    .sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
-  const pageClusterSignals = deduped
-    .filter(row => row.source_role === 'page_cluster')
+    .sort((a, b) => opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context))
+  const pageClusterSignals = pool
+    .filter(row => row.source_role === 'page_cluster' && relevanceScore(row, context) >= 0.25)
     .sort((a, b) => {
-      const scoreDelta = opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume)
+      const scoreDelta = opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context)
       return scoreDelta || b.volume - a.volume
     })
-  const currentGapSignals = deduped
+  const currentGapSignals = pool
     .filter(row => row.source_role === 'current_page_gap')
-    .sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
+    .sort((a, b) => opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context))
 
   const selected = new Map<string, KeywordRow>()
   addRows(selected, byVolume, Math.min(maxSend, 220))

@@ -10,7 +10,9 @@ function supportsArticleIdeaExpansions(prompt: string): boolean {
     prompt.includes('source_role') &&
     prompt.includes('competition') &&
     prompt.includes('serp_features') &&
-    prompt.includes('trend')
+    prompt.includes('trend') &&
+    prompt.includes('TOPICAL RELEVANCE / OUTCOME MATCH RULE') &&
+    prompt.includes('SECTION BOUNDARY')
   )
 }
 
@@ -216,7 +218,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No keywords found in uploaded files or pasted rows' }, { status: 400 })
     }
 
-    const { filtered, stats } = mergeAndFilter(allRows)
+    const { filtered, stats } = mergeAndFilter(allRows, { primaryKeyword, pageType })
     if (filtered.length === 0) {
       return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
