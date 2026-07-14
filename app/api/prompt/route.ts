@@ -11,7 +11,10 @@ function supportsArticleIdeaExpansions(prompt: string): boolean {
     prompt.includes('{{TARGET_AUDIENCE}}') &&
     prompt.includes('article_idea_expansions') &&
     prompt.includes('keyword_id') &&
-    prompt.includes('source_role')
+    prompt.includes('source_role') &&
+    prompt.includes('competition') &&
+    prompt.includes('serp_features') &&
+    prompt.includes('trend')
   )
 }
 
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
     !supportsArticleIdeaExpansions(prompt)
   ) {
     return NextResponse.json(
-      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, keyword_id, and source_role rules.' },
+      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, keyword_id, source_role, competition, serp_features, and trend rules.' },
       { status: 400 }
     )
   }

@@ -7,7 +7,10 @@ function supportsArticleIdeaExpansions(prompt: string): boolean {
     prompt.includes('{{TARGET_AUDIENCE}}') &&
     prompt.includes('article_idea_expansions') &&
     prompt.includes('keyword_id') &&
-    prompt.includes('source_role')
+    prompt.includes('source_role') &&
+    prompt.includes('competition') &&
+    prompt.includes('serp_features') &&
+    prompt.includes('trend')
   )
 }
 
@@ -25,6 +28,9 @@ type MetricRow = {
   volume: number
   kd?: number
   cpc?: number
+  competition?: number
+  trend?: string
+  serp_features?: string
   source_role?: SourceRole
   source: string
 }
@@ -58,6 +64,8 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
       target.volume = 0
       target.kd = 0
       target.cpc = 0
+      target.density = 0
+      target.competition = 0
       target.source = 'unsupported_ai_suggestion'
       target.source_role = 'unsupported'
       if (typeof target.note === 'string') {
@@ -83,6 +91,10 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
     target.volume = row.volume
     target.kd = row.kd ?? 0
     target.cpc = row.cpc ?? 0
+    target.density = row.competition ?? 0
+    target.competition = row.competition ?? 0
+    if (row.trend) target.trend = row.trend
+    if (row.serp_features) target.serp_features = row.serp_features
     target.source = row.source
     target.source_role = row.source_role
     return true
@@ -111,6 +123,7 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
         })
         delete target.primary_keyword_volume
         delete target.primary_keyword_kd
+        delete target.primary_keyword_competition
         target.source = 'unsupported_ai_suggestion'
         target.source_role = 'unsupported'
         target.difficulty_note = [
@@ -123,6 +136,9 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
       target.primary_keyword = row.keyword
       target.primary_keyword_volume = row.volume
       target.primary_keyword_kd = row.kd ?? 0
+      target.primary_keyword_competition = row.competition ?? 0
+      if (row.trend) target.primary_keyword_trend = row.trend
+      if (row.serp_features) target.serp_features = row.serp_features
       target.source = row.source
       target.source_role = row.source_role
       if (!rowById && rowByKeyword) {

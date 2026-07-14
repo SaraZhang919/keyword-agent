@@ -32,6 +32,113 @@ export type KeywordRow = {
   source: string
 }
 
+const TASK_PATTERN = /\b(analy[sz]e|ask|chat|check|convert|create|detect|edit|extract|find|fix|generate|get|identify|make|merge|read|remove|scan|split|summari[sz]e|take|transcribe|translate|unlock|write)\b/i
+const TOOL_PATTERN = /\b(app|assistant|builder|calculator|checker|converter|editor|extractor|finder|generator|maker|reader|scanner|summari[sz]er|template|tool)\b/i
+const ACCESS_PATTERN = /\b(free|gratis|online|no sign ?up|without (login|sign ?up|watermark)|browser|web|instant)\b/i
+const TRUST_PATTERN = /\b(accurate|best|safe|secure|private|privacy|alternative|comparison|compare|citation|citations|cite|source reference|sources?)\b/i
+const USE_CASE_PATTERN = /\b(academic|business|contract|enterprise|legal|meeting|report|research|student|teacher|team|work|workflow)\b/i
+const QUESTION_PATTERN = /\b(how|what|why|when|where|which|can|is|are|does|do)\b/i
+const PLATFORM_FORMAT_PATTERN = /\b(android|api|browser|caption|captions|chrome|csv|desktop|docx|excel|extension|ios|iphone|mac|mobile|notes?|pdf|png|ppt|sheets|summary|summaries|transcript|transcripts|windows|word|xlsx)\b/i
+
+function tokenCount(keyword: string): number {
+  return keyword.split(/\s+/).filter(Boolean).length
+}
+
+function logVolumeScore(volume: number, maxVolume: number): number {
+  if (maxVolume <= 0) return 0
+  return Math.log10(volume + 1) / Math.log10(maxVolume + 1)
+}
+
+function kdScore(kd?: number): number {
+  if (kd === undefined) return 0.15
+  if (kd < 20) return 1
+  if (kd < 40) return 0.85
+  if (kd <= 65) return 0.45
+  if (kd <= 80) return 0.18
+  return 0
+}
+
+function intentScore(intent?: string): number {
+  const normalized = intent?.toLowerCase() ?? ''
+  if (normalized.includes('transactional')) return 1
+  if (normalized.includes('commercial')) return 0.85
+  if (normalized.includes('informational')) return 0.45
+  if (normalized.includes('navigational')) return 0.05
+  return 0.25
+}
+
+function modifierScore(row: KeywordRow): number {
+  const text = `${row.keyword} ${row.page ?? ''} ${row.topic ?? ''} ${row.page_type ?? ''}`
+  let score = 0
+  if (TASK_PATTERN.test(text)) score += 0.18
+  if (TOOL_PATTERN.test(text)) score += 0.16
+  if (ACCESS_PATTERN.test(text)) score += 0.15
+  if (TRUST_PATTERN.test(text)) score += 0.14
+  if (USE_CASE_PATTERN.test(text)) score += 0.12
+  if (QUESTION_PATTERN.test(text)) score += 0.1
+  if (PLATFORM_FORMAT_PATTERN.test(text)) score += 0.08
+  if (tokenCount(row.keyword) >= 3) score += 0.12
+  if (tokenCount(row.keyword) >= 5) score += 0.08
+  return Math.min(score, 0.75)
+}
+
+function roleScore(role: SourceRole): number {
+  if (role === 'broad_match') return 0.18
+  if (role === 'page_cluster') return 0.16
+  if (role === 'current_page_gap') return 0.12
+  if (role === 'custom') return 0.08
+  return 0
+}
+
+function opportunityScore(row: KeywordRow, maxVolume: number): number {
+  const volume = logVolumeScore(row.volume, maxVolume)
+  const kd = kdScore(row.kd)
+  const intent = intentScore(row.intent)
+  const modifiers = modifierScore(row)
+  const role = roleScore(row.source_role)
+  const competitionSignal = row.competition !== undefined && row.competition > 0 ? 0.04 : 0
+  const serpSignal = row.serp_features ? 0.06 : 0
+  const clusterSignal = row.topic || row.page || row.page_type ? 0.08 : 0
+
+  return (
+    volume * 0.28 +
+    kd * 0.24 +
+    intent * 0.16 +
+    modifiers +
+    role +
+    competitionSignal +
+    serpSignal +
+    clusterSignal
+  )
+}
+
+function clusterKey(row: KeywordRow): string {
+  return (row.topic || row.page || row.source || row.source_role).toLowerCase().trim()
+}
+
+function addRows(
+  selected: Map<string, KeywordRow>,
+  rows: KeywordRow[],
+  limit: number,
+  maxPerCluster = Infinity
+) {
+  const clusterCounts = new Map<string, number>()
+  for (const row of selected.values()) {
+    const key = clusterKey(row)
+    clusterCounts.set(key, (clusterCounts.get(key) ?? 0) + 1)
+  }
+
+  for (const row of rows) {
+    if (selected.size >= limit) break
+    if (selected.has(row.keyword)) continue
+    const key = clusterKey(row)
+    const count = clusterCounts.get(key) ?? 0
+    if (count >= maxPerCluster) continue
+    selected.set(row.keyword, row)
+    clusterCounts.set(key, count + 1)
+  }
+}
+
 function parseNumber(value: string): number | undefined {
   const normalized = value.trim().replace(/,/g, '').replace(/\s+/g, '').toLowerCase()
   if (!normalized || normalized === '/' || normalized === '-') return undefined
@@ -247,22 +354,55 @@ export function mergeAndFilter(
 
   const deduped = Array.from(map.values())
   const afterDedup = deduped.length
+  const maxVolume = Math.max(...deduped.map(row => row.volume), 0)
   const byVolume = [...deduped].sort((a, b) => b.volume - a.volume)
-  const longtailPattern = /\b(how|what|why|best|safe|extract|key points?|notes?|citations?|source reference|research paper|academic|meeting notes?|report|legal contract|multilingual|summari[sz]e|pdf to notes?)\b/i
-  const rolePriority = deduped
-    .filter(row => row.source_role === 'broad_match' || row.source_role === 'page_cluster' || row.source_role === 'current_page_gap')
-    .sort((a, b) => b.volume - a.volume)
-  const longtailSignals = deduped
-    .filter(row => longtailPattern.test(row.keyword))
-    .sort((a, b) => b.volume - a.volume)
+  const byOpportunity = [...deduped].sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
+  const lowKdOpportunities = deduped
+    .filter(row => {
+      const hasLowKd = row.kd !== undefined && row.kd < 40
+      const hasSpecificity = tokenCount(row.keyword) >= 3
+      const hasModifier = modifierScore(row) >= 0.2
+      return hasLowKd && (hasSpecificity || hasModifier)
+    })
+    .sort((a, b) => {
+      const volumeBandA = a.volume >= 100 ? 1 : 0
+      const volumeBandB = b.volume >= 100 ? 1 : 0
+      const bandDelta = volumeBandB - volumeBandA
+      return bandDelta || b.volume - a.volume || opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume)
+    })
+  const placementSignals = deduped
+    .filter(row => {
+      const text = `${row.keyword} ${row.page ?? ''} ${row.topic ?? ''} ${row.page_type ?? ''}`
+      return (
+        TASK_PATTERN.test(text) ||
+        TOOL_PATTERN.test(text) ||
+        ACCESS_PATTERN.test(text) ||
+        TRUST_PATTERN.test(text) ||
+        USE_CASE_PATTERN.test(text) ||
+        QUESTION_PATTERN.test(text) ||
+        PLATFORM_FORMAT_PATTERN.test(text)
+      )
+    })
+    .sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
+  const pageClusterSignals = deduped
+    .filter(row => row.source_role === 'page_cluster')
+    .sort((a, b) => {
+      const scoreDelta = opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume)
+      return scoreDelta || b.volume - a.volume
+    })
+  const currentGapSignals = deduped
+    .filter(row => row.source_role === 'current_page_gap')
+    .sort((a, b) => opportunityScore(b, maxVolume) - opportunityScore(a, maxVolume))
 
   const selected = new Map<string, KeywordRow>()
-  for (const row of longtailSignals.slice(0, 150)) selected.set(row.keyword, row)
-  for (const row of rolePriority.slice(0, 350)) selected.set(row.keyword, row)
-  for (const row of byVolume) {
-    if (selected.size >= maxSend) break
-    selected.set(row.keyword, row)
-  }
+  addRows(selected, byVolume, Math.min(maxSend, 220))
+  addRows(selected, currentGapSignals, Math.min(maxSend, 320))
+  addRows(selected, lowKdOpportunities, Math.min(maxSend, 470))
+  addRows(selected, placementSignals, Math.min(maxSend, 490), 14)
+  addRows(selected, pageClusterSignals, maxSend, 8)
+  addRows(selected, byOpportunity, maxSend, 18)
+  addRows(selected, byOpportunity, maxSend)
+  addRows(selected, byVolume, maxSend)
 
   const filtered = Array.from(selected.values())
     .sort((a, b) => b.volume - a.volume)
@@ -285,7 +425,7 @@ export function mergeAndFilter(
 }
 
 export function formatForAI(rows: KeywordRow[]): string {
-  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\tpage\ttopic\tpage_type\tserp_features'
+  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features'
   const body = rows
     .map(row => [
       row.keyword_id ?? '',
@@ -297,6 +437,7 @@ export function formatForAI(rows: KeywordRow[]): string {
       row.cpc ?? '',
       row.competition ?? '',
       row.intent ?? '',
+      row.trend ?? '',
       row.page ?? '',
       row.topic ?? '',
       row.page_type ?? '',

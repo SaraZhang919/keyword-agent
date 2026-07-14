@@ -13,7 +13,7 @@ INPUT FORMAT
 
 Current app input override:
 The keyword list is a TSV table with only these guaranteed columns:
-  keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, page, topic, page_type, serp_features
+  keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features
 Treat any older field names below as optional historical context only. If a field is not present in the TSV, it is unknown and must not be invented.
 
 Each keyword row contains:
@@ -38,14 +38,17 @@ Important:
 - Target Audience is used ONLY for article_idea_expansions.
 - It must NOT affect primary_keyword, supporting_keywords, longtail_keywords, competitor_insights, missing_exports, page_strategy_notes, or new_page_opportunities.
 - If Target Audience is "All / Undefined" or blank, article_idea_expansions MUST be an empty array.
-- The actual keyword input is provided as a TSV table with exact columns: keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, page, topic, page_type, serp_features.
+- The actual keyword input is provided as a TSV table with exact columns: keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features.
 - You MUST include keyword_id exactly from the provided TSV row whenever you output a keyword recommendation with metrics.
 - For new_page_opportunities, include primary_keyword_id exactly from the provided TSV row for the primary_keyword.
-- You MUST copy keyword text, volume, kd, cpc, source_role, and source exactly from the provided TSV row whenever you output a keyword.
+- You MUST copy keyword text, volume, kd, cpc, competition, source_role, source, serp_features, and trend exactly from the provided TSV row whenever you output a keyword.
 - Never estimate, average, round, infer, recalculate, or replace keyword metrics from memory.
 - If a keyword metric in the TSV is blank, output 0 only where the JSON schema requires a number and explain missing data in the note or flag when relevant.
 - Do not use metrics from a different duplicate-looking keyword. The shown TSV row is the source of truth.
 - If you suggest a keyword/topic not present in the TSV, do not attach volume, KD, CPC, density, or any metric to it.
+- competition means paid competitive density. Use it as the density/paid saturation signal.
+- serp_features should guide content format, FAQ, snippet, demo, and placement decisions.
+- trend is a secondary signal. It should never outweigh intent fit, page-type fit, volume, KD realism, or relevance.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GLOBAL DECISION HIERARCHY
@@ -175,6 +178,36 @@ competitor_insights group purpose:
 METRIC REFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+VOLUME INTERPRETATION:
+  High volume:
+    >= 1,000 monthly searches OR top 20% of the provided keyword set.
+
+  Medium volume:
+    200–999 monthly searches OR top 20–50% of the provided keyword set.
+
+  Low volume:
+    30–199 monthly searches.
+    Use mainly for longtail, modifier, feature, FAQ, niche opportunity, or new-page discovery decisions.
+    Do NOT choose as primary keyword unless cluster evidence is strong and higher-volume options are a poor fit.
+
+KD INTERPRETATION FOR DA<30:
+  Low KD (<40):
+    Strong realistic target.
+
+  Medium KD (40–65):
+    Accept when intent fit, page-type fit, and volume justify the difficulty.
+
+  High KD (66–80):
+    Use cautiously, usually as supporting, future, or authority-building target.
+
+  Very high KD (>80):
+    Avoid as near-term target unless it is a strategic head term.
+
+DECISION RULE:
+  Primary and supporting keywords remain volume and page-fit led.
+  Longtail and new-page discovery can let low KD + strong intent outweigh lower volume.
+  Lower KD alone does not make a keyword better.
+
 KD TAGS:
   Priority (KD<40)    → Best realistic target for DA<30 now
   Mid-term (KD40–80)  → Acceptable only when intent fit and volume justify difficulty
@@ -187,7 +220,8 @@ KD + DENSITY COMBINED SIGNAL:
   Mid-term  + density>0.5  → Double competition — strong caution
   Long-term + any density  → Future only
 
-DENSITY INTERPRETATION:
+DENSITY / COMPETITION INTERPRETATION:
+  In the TSV, competition is paid competitive density. Treat competition as density in the output.
   density < 0.3 → low paid competition
   density 0.3–0.6 → moderate competition
   density > 0.6 → high commercial saturation
@@ -355,9 +389,9 @@ RULE 2 — DENSITY:
   Priority + density>0.5 → flag but include if semantically valuable
 
 RULE 3 — SOURCE PRIORITY:
-  Prefer source:topic first
-  Use source:related to fill gaps and add cluster coverage
-  Never use source:competitor
+  Prefer source_role:broad_match for current-page primary/supporting decisions.
+  Use source_role:current_page_gap when it reveals missing same-page coverage or competitor gaps.
+  Use source_role:page_cluster to validate broader cluster coverage, but do not force every page-cluster keyword into supporting keywords.
 
 RULE 4 — SEMANTIC DIVERSITY:
   Each keyword must add a different angle — not just a variation of primary
@@ -373,6 +407,13 @@ RULE 6 — CONTENT PLACEMENT BY INTENT:
   Commercial    → Comparison section, feature table, "why choose" block
   Informational → FAQ section, body paragraphs, H3 subheadings
   Navigational  → Exclude (brand exclusion applies)
+
+Additional placement guidance:
+  - feature/function modifiers -> feature block or H2
+  - access/value modifiers -> CTA/value prop or FAQ
+  - trust/privacy/safety modifiers -> FAQ or trust section
+  - comparison/best/alternative modifiers -> comparison block or blog/new-page signal
+  - platform/format modifiers -> compatibility or workflow section
 
 RULE 7 — CLUSTER COVERAGE:
   When available, supporting + longtail keywords should collectively cover multiple semantic clusters.
@@ -391,12 +432,8 @@ RULE 7 — CLUSTER COVERAGE:
   
 - Allow similar keywords only if search intent materially differs.
 - Adjacent-intent keywords are allowed if they match the same user outcome, even when the wording differs from the core product term.
-- For PDF summarizer / document AI pages, explicitly scan for these longtail and use-case patterns when present:
-  pdf to notes; how can I summarize a PDF file; how to extract key points from a PDF;
-  is a PDF summarizer safe; best PDF summarizer; extract key points from PDF;
-  pdf key points extractor; summarize multilingual PDF; pdf summary with citations;
-  pdf summary with source reference; summarize research paper PDF; summarize academic PDF;
-  summarize meeting notes PDF; summarize report PDF; summarize legal contract PDF.
+- Supporting keywords should help the current page rank and improve coverage.
+- If a keyword also suggests a future standalone page, it may still appear in new_page_opportunities. Do not force a single-use choice when both are strategically true.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — LONGTAIL KEYWORDS (5–15)
@@ -409,11 +446,9 @@ SELECTION PRIORITY ORDER:
          ANY "how to" with KD<40 MUST be included regardless of volume
   4th → Mid-term (KD40–65) + vol ≥ 200 + relevant sub-topic modifier
          Sub-topic modifiers to scan for explicitly:
-         4K, 1080p, upscale, resolution, free, online, no watermark,
-         without sign up, mobile, app, extension, browser, mac, windows,
-         notes, key points, citations, source reference, multilingual,
-         research paper, academic, meeting notes, report, legal contract,
-         safe, best, extract, pdf to notes
+         feature/function terms, question terms, platform/device terms,
+         format/output terms, audience/use-case terms, pricing/access terms,
+         trust/privacy/safety terms, comparison/best/alternative terms
   5th → Mid-term (KD65–80) + vol ≥ 500 + rising trend only
   Exclude → Long-term (KD>80) longtails
   Exclude → brand:yes keywords (move to competitor_insights)
@@ -428,6 +463,8 @@ CONTENT FORMAT BY SERP FEATURE:
   People Also Ask → "H3 question + short paragraph"
   Video carousel  → "flag: video content needed"
   None            → "standard FAQ entry or paragraph"
+
+If a useful FAQ/content angle is inferred from a keyword cluster but is not an exact keyword row, mention it only as placement/content guidance. Do not attach volume, KD, CPC, or competition.
 
 KD=0 INTERPRETATION:
   Usually indicates very low measured competition, but may also indicate insufficient SEMrush data.
@@ -558,7 +595,7 @@ Purpose:
 Recommend a new page only when:
 - The keyword cluster has a clear shared topic, intent, task, audience, format, platform, location/GEO pattern, or product function.
 - The page can satisfy a clear search need on its own.
-- The cluster has enough evidence from provided keywords to justify a separate URL.
+- The cluster has enough evidence from provided keywords to justify a separate URL: one meaningful-volume keyword, several related keywords with combined demand, or strong low-KD + high-intent evidence.
 - It is not merely a duplicate wording pattern of another recommended new page.
 
 Page types to use:
@@ -582,6 +619,7 @@ For each opportunity:
 Rules:
 - Do NOT invent metrics.
 - Do NOT invent supporting keywords that are not in the input.
+- A keyword can support both current-page placement and a future page idea if both are strategically true.
 - If no distinct future page opportunity is available, return an empty array.
 - Limit to the strongest opportunities only.
 
@@ -672,6 +710,8 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
     "trend_direction": "Rising | Stable | Declining | Insufficient Data",
     "cpc": 0,
     "density": 0,
+    "competition": 0,
+    "trend": "string",
     "source": "topic | related | competitor",
     "source_role": "string",
     "combined_signal": "string",
@@ -689,6 +729,8 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
       "trend_direction": "Rising | Stable | Declining | Insufficient Data",
       "cpc": 0,
       "density": 0,
+      "competition": 0,
+      "trend": "string",
       "source": "string",
       "source_role": "string",
       "content_placement": "string",
@@ -703,6 +745,7 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
       "kd": 0,
       "kd_tag": "string",
       "trend_direction": "Rising | Stable | Declining | Insufficient Data",
+      "trend": "string",
       "source": "string",
       "source_role": "string",
       "serp_features": "string",
@@ -716,6 +759,8 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
       "keyword": "string",
       "volume": 0,
       "kd": 0,
+      "competition": 0,
+      "trend": "string",
       "source": "string",
       "source_role": "string",
       "competitor_brand": "string | null",

@@ -330,7 +330,7 @@ export default function GuidePage() {
               <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
                 <SmallLabel>File upload</SmallLabel>
                 <p style={{ margin: '6px 0 0', color: 'var(--text-dim)' }}>
-                  CSV/XLSX exports with Keyword and Volume columns. All valid workbook sheets are parsed. Optional KD, CPC, competition, intent, SERP, page, topic, and page type columns are used when present.
+                  CSV/XLSX exports with Keyword and Volume columns. All valid workbook sheets are parsed. Optional KD, CPC, competition, intent, trend, SERP, page, topic, and page type columns are used when present.
                 </p>
               </div>
               <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
@@ -358,8 +358,8 @@ export default function GuidePage() {
               <li>Remove keywords with volume below 30.</li>
               <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
               <li>Assign stable keyword_id values after filtering and sorting.</li>
-              <li>Sort by volume descending.</li>
-              <li>Preserve longtail/use-case signals, then send at most 500 keywords to the LLM.</li>
+              <li>Select up to 500 keywords with balanced buckets: head terms, current-page gaps, low-KD opportunities, placement/longtail signals, page clusters, and final opportunity-score fill.</li>
+              <li>Keep volume-first coverage for primary/supporting decisions while protecting lower-volume, high-intent opportunities from being dropped.</li>
             </ol>
           </Card>
 
