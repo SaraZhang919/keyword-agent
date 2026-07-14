@@ -17,6 +17,7 @@ export const SOURCE_ROLE_LABELS: Record<SourceRole, string> = {
 
 export type KeywordRow = {
   keyword_id?: string
+  keyword_fit?: KeywordFit
   keyword: string
   volume: number
   kd?: number
@@ -31,6 +32,8 @@ export type KeywordRow = {
   source_role: SourceRole
   source: string
 }
+
+export type KeywordFit = 'current_page_fit' | 'separate_page_only' | 'off_topic'
 
 const TASK_PATTERN = /\b(analy[sz]e|ask|chat|check|convert|create|detect|edit|extract|find|fix|generate|get|identify|make|merge|read|remove|scan|split|summari[sz]e|take|transcribe|translate|unlock|write)\b/i
 const TOOL_PATTERN = /\b(app|assistant|builder|calculator|checker|converter|editor|extractor|finder|generator|maker|reader|scanner|summari[sz]er|template|tool)\b/i
@@ -51,9 +54,19 @@ const GENERIC_PRODUCT_TOKENS = new Set([
 ])
 const FORMAT_GROUPS: Record<string, string[]> = {
   document: ['pdf', 'doc', 'docx', 'document', 'documents', 'file', 'files', 'paper', 'report', 'contract'],
+  text_content: ['article', 'articles', 'blog', 'blogs', 'email', 'emails', 'text', 'texts', 'webpage', 'webpages'],
   video: ['video', 'videos', 'youtube', 'tiktok', 'reels', 'shorts', 'mp4'],
   image: ['image', 'images', 'photo', 'photos', 'picture', 'pictures', 'png', 'jpg', 'jpeg'],
   audio: ['audio', 'podcast', 'voice', 'mp3', 'transcript', 'transcription'],
+}
+const TASK_GROUPS: Record<string, string[]> = {
+  summarize: ['summarize', 'summarise', 'summarizer', 'summariser', 'summary', 'summaries', 'summarization', 'summarisation', 'key points', 'main points', 'notes'],
+  compress: ['compress', 'compression', 'reduce size', 'file size', 'smaller', 'resize'],
+  convert: ['convert', 'converter', 'conversion', 'to text', 'ocr', 'extract text'],
+  edit: ['edit', 'editor', 'merge', 'split', 'annotate', 'sign', 'fill'],
+  protect: ['unlock', 'lock', 'protect', 'unprotect', 'password', 'permissions'],
+  chat_read: ['chat', 'read', 'reader', 'ask'],
+  translate: ['translate', 'translation'],
 }
 
 function tokenCount(keyword: string): number {
@@ -68,6 +81,18 @@ function tokenize(text: string): string[] {
     .filter(Boolean)
 }
 
+function groupsForText(text: string, groups: Record<string, string[]>): Set<string> {
+  const normalized = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `
+  const tokens = new Set(tokenize(text))
+  const matched = new Set<string>()
+  for (const [group, terms] of Object.entries(groups)) {
+    if (terms.some(term => term.includes(' ') ? normalized.includes(` ${term} `) : tokens.has(term))) {
+      matched.add(group)
+    }
+  }
+  return matched
+}
+
 function primaryContext(primaryKeyword?: string, pageType?: string) {
   const primaryTokens = tokenize(primaryKeyword ?? '')
   const coreTokens = primaryTokens.filter(token => !STOP_TOKENS.has(token) && !GENERIC_PRODUCT_TOKENS.has(token))
@@ -78,6 +103,7 @@ function primaryContext(primaryKeyword?: string, pageType?: string) {
     tokens: new Set(coreTokens.length ? coreTokens : fallbackTokens),
     allTokens: new Set(fallbackTokens),
     groups: formatGroupsForText(primaryKeyword ?? ''),
+    taskGroups: groupsForText(primaryKeyword ?? '', TASK_GROUPS),
     definitionIntent: DEFINITION_PATTERN.test(primaryKeyword ?? ''),
   }
 }
@@ -87,12 +113,7 @@ function rowText(row: KeywordRow): string {
 }
 
 function formatGroupsForText(text: string): Set<string> {
-  const tokens = new Set(tokenize(text))
-  const groups = new Set<string>()
-  for (const [group, terms] of Object.entries(FORMAT_GROUPS)) {
-    if (terms.some(term => tokens.has(term))) groups.add(group)
-  }
-  return groups
+  return groupsForText(text, FORMAT_GROUPS)
 }
 
 type KeywordContext = ReturnType<typeof primaryContext>
@@ -136,10 +157,44 @@ function hasFormatDrift(row: KeywordRow, context: KeywordContext): boolean {
   return !hasSharedGroup
 }
 
+function hasSharedGroup(a: Set<string>, b: Set<string>): boolean {
+  for (const group of a) {
+    if (b.has(group)) return true
+  }
+  return false
+}
+
+function keywordTaskGroups(row: KeywordRow): Set<string> {
+  return groupsForText(row.keyword, TASK_GROUPS)
+}
+
+function hasTaskDrift(row: KeywordRow, context: KeywordContext): boolean {
+  if (context.taskGroups.size === 0) return false
+  const rowTasks = keywordTaskGroups(row)
+  if (rowTasks.size === 0) return false
+  return !hasSharedGroup(rowTasks, context.taskGroups)
+}
+
 function hasDefinitionDrift(row: KeywordRow, context: KeywordContext): boolean {
   if (context.definitionIntent) return false
   if (!DEFINITION_PATTERN.test(rowText(row))) return false
   return true
+}
+
+function keywordFit(row: KeywordRow, context: KeywordContext): KeywordFit {
+  if (hasDefinitionDrift(row, context)) return 'off_topic'
+
+  const relevance = relevanceScore(row, context)
+  const formatDrift = hasFormatDrift(row, context)
+  const taskDrift = hasTaskDrift(row, context)
+
+  if (formatDrift && taskDrift) return 'off_topic'
+  if (formatDrift || taskDrift) return 'separate_page_only'
+  if (relevance >= 0.25) return 'current_page_fit'
+
+  const rowTasks = keywordTaskGroups(row)
+  if (context.taskGroups.size > 0 && hasSharedGroup(rowTasks, context.taskGroups)) return 'separate_page_only'
+  return 'off_topic'
 }
 
 function logVolumeScore(volume: number, maxVolume: number): number {
@@ -469,14 +524,14 @@ export function mergeAndFilter(
     }
   }
 
-  const deduped = Array.from(map.values())
+  const deduped = Array.from(map.values()).map(row => ({
+    ...row,
+    keyword_fit: keywordFit(row, context),
+  }))
   const afterDedup = deduped.length
-  const eligible = deduped.filter(row => {
-    if (hasFormatDrift(row, context)) return false
-    if (hasDefinitionDrift(row, context)) return false
-    return true
-  })
-  const pool = eligible.length ? eligible : deduped
+  const currentPagePool = deduped.filter(row => row.keyword_fit === 'current_page_fit')
+  const separatePagePool = deduped.filter(row => row.keyword_fit === 'separate_page_only')
+  const pool = currentPagePool.length ? currentPagePool : deduped.filter(row => row.keyword_fit !== 'off_topic')
   const maxVolume = Math.max(...pool.map(row => row.volume), 0)
   const byVolume = [...pool].sort((a, b) => b.volume - a.volume)
   const byOpportunity = [...pool].sort((a, b) => opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context))
@@ -516,17 +571,26 @@ export function mergeAndFilter(
       const scoreDelta = opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context)
       return scoreDelta || b.volume - a.volume
     })
+  const separateMaxVolume = Math.max(...separatePagePool.map(candidate => candidate.volume), 0)
+  const separatePageSignals = separatePagePool
+    .filter(row => row.source_role === 'page_cluster' || row.source_role === 'custom')
+    .sort((a, b) => {
+      const scoreDelta = opportunityScore(b, separateMaxVolume, context) - opportunityScore(a, separateMaxVolume, context)
+      return scoreDelta || b.volume - a.volume
+    })
   const currentGapSignals = pool
     .filter(row => row.source_role === 'current_page_gap')
     .sort((a, b) => opportunityScore(b, maxVolume, context) - opportunityScore(a, maxVolume, context))
 
   const selected = new Map<string, KeywordRow>()
-  addRows(selected, byVolume, Math.min(maxSend, 220))
-  addRows(selected, currentGapSignals, Math.min(maxSend, 320))
-  addRows(selected, lowKdOpportunities, Math.min(maxSend, 470))
-  addRows(selected, placementSignals, Math.min(maxSend, 490), 14)
+  addRows(selected, byVolume, Math.min(maxSend, 200))
+  addRows(selected, currentGapSignals, Math.min(maxSend, 300))
+  addRows(selected, lowKdOpportunities, Math.min(maxSend, 430))
+  addRows(selected, placementSignals, Math.min(maxSend, 455), 14)
+  addRows(selected, separatePageSignals, Math.min(maxSend, 485), 10)
   addRows(selected, pageClusterSignals, maxSend, 8)
   addRows(selected, byOpportunity, maxSend, 18)
+  addRows(selected, separatePageSignals, maxSend, 12)
   addRows(selected, byOpportunity, maxSend)
   addRows(selected, byVolume, maxSend)
 
@@ -551,10 +615,11 @@ export function mergeAndFilter(
 }
 
 export function formatForAI(rows: KeywordRow[]): string {
-  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features'
+  const header = 'keyword_id\tkeyword_fit\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features'
   const body = rows
     .map(row => [
       row.keyword_id ?? '',
+      row.keyword_fit ?? '',
       row.source_role,
       row.source,
       row.keyword,

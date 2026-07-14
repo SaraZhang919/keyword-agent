@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI, type SourceRole } from '@/lib/prefilter'
+import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI, type KeywordFit, type SourceRole } from '@/lib/prefilter'
 import { DEFAULT_PROMPT, MODEL } from '@/lib/prompt'
 
 function supportsArticleIdeaExpansions(prompt: string): boolean {
@@ -7,6 +7,7 @@ function supportsArticleIdeaExpansions(prompt: string): boolean {
     prompt.includes('{{TARGET_AUDIENCE}}') &&
     prompt.includes('article_idea_expansions') &&
     prompt.includes('keyword_id') &&
+    prompt.includes('keyword_fit') &&
     prompt.includes('source_role') &&
     prompt.includes('competition') &&
     prompt.includes('serp_features') &&
@@ -33,6 +34,7 @@ type MetricRow = {
   competition?: number
   trend?: string
   serp_features?: string
+  keyword_fit?: KeywordFit
   source_role?: SourceRole
   source: string
 }
@@ -97,6 +99,7 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
     target.competition = row.competition ?? 0
     if (row.trend) target.trend = row.trend
     if (row.serp_features) target.serp_features = row.serp_features
+    if (row.keyword_fit) target.keyword_fit = row.keyword_fit
     target.source = row.source
     target.source_role = row.source_role
     return true
@@ -141,6 +144,7 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
       target.primary_keyword_competition = row.competition ?? 0
       if (row.trend) target.primary_keyword_trend = row.trend
       if (row.serp_features) target.serp_features = row.serp_features
+      if (row.keyword_fit) target.keyword_fit = row.keyword_fit
       target.source = row.source
       target.source_role = row.source_role
       if (!rowById && rowByKeyword) {
