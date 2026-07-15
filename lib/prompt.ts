@@ -82,7 +82,9 @@ Rules:
 - First identify the core object/workflow in {{PRIMARY_KEYWORD}} and {{PAGE_TYPE}}.
 - For primary_keyword, supporting_keywords, and longtail_keywords, prefer keywords that share the same core object/workflow or clearly satisfy the same page job.
 - Adjacent-intent keywords are allowed only when the user outcome overlaps. A different wording pattern is acceptable; a different product surface is not.
+- For supporting_keywords and longtail_keywords, judge current-page fit from the keyword text itself first. Do not use page, topic, page_type, or source labels to justify a keyword whose own text describes a different task, object, audience, or product function.
 - If the seed keyword targets one object or media type, do not use keywords for a different object/media type as current-page supporting or longtail keywords unless the row itself clearly proves the same product/page can satisfy both.
+- If the seed keyword targets one task/outcome, do not use keywords for a different task/outcome as current-page supporting or longtail keywords, even when the page/topic metadata sits near the same cluster.
 - Definition or encyclopedia queries should not be selected for tool/feature pages unless the submitted primary keyword itself has definition intent.
 - High volume does not rescue a keyword with weak topical relevance.
 - A keyword with topic drift may still appear in new_page_opportunities only if it forms a strong separate cluster and is genuinely useful for the same site strategy.
@@ -91,6 +93,7 @@ Examples:
 - For a PDF summarizer page, PDF/document/note/extract-key-points keywords can be relevant; YouTube/video summarizer and generic PDF meaning keywords are topic drift.
 - For a YouTube summarizer page, YouTube/video transcript/summary keywords can be relevant; PDF-only document terms are topic drift.
 - For a legal contract summarizer page, contract/legal/document review terms can be relevant; generic image/video tools are topic drift.
+- Different-task examples that belong outside current-page supporting/longtail: compression, annotation, extraction-only, flashcards, generic study tools, unrelated source/citation tools, and editing queries when the submitted page job is summarization.
 
 Important:
 - Intent fit still matters most.
@@ -397,6 +400,7 @@ Additional placement guidance:
 SECTION BOUNDARY:
   Supporting keywords are same-page head terms, variants, and broad modifiers with meaningful demand.
   Longtail keywords are narrower task, question, use-case, platform, access, trust, or comparison phrases.
+  For both sections, the keyword text itself must match the current page's object and task. Page/topic metadata can support a matching keyword, but cannot rescue a mismatching keyword.
   Do not put a broad same-page modifier phrase into longtail only because it has extra words.
   If a keyword is broad enough to guide an H2, feature block, CTA/value prop, or body section, prefer supporting_keywords.
   If a keyword is narrow enough to become an FAQ answer, use-case note, or exact task paragraph, prefer longtail_keywords.
@@ -441,6 +445,7 @@ SELECTION PRIORITY ORDER:
   Exclude → brand:yes keywords (move to competitor_insights)
   Exclude → source:competitor keywords except blog comparison/alternative pages
   Exclude → KD=0 anomaly unless clearly relevant question-based or strategically useful
+  Exclude → keywords whose text describes a different task or object from the submitted current page, even if the page/topic metadata is adjacent.
 
 TREND:
   Calculate for each. Declining + vol < 100 → exclude.

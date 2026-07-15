@@ -41,7 +41,82 @@ function normalizeKeyword(keyword: unknown): string {
   return String(keyword ?? '').trim().toLowerCase()
 }
 
-function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
+function keywordTokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+  )
+}
+
+function groupMatch(text: string, groups: Record<string, string[]>): Set<string> {
+  const normalized = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `
+  const tokens = keywordTokens(text)
+  const matches = new Set<string>()
+  for (const [group, terms] of Object.entries(groups)) {
+    if (terms.some(term => term.includes(' ') ? normalized.includes(` ${term} `) : tokens.has(term))) {
+      matches.add(group)
+    }
+  }
+  return matches
+}
+
+function hasSharedGroup(a: Set<string>, b: Set<string>): boolean {
+  for (const item of a) {
+    if (b.has(item)) return true
+  }
+  return false
+}
+
+const FORMAT_GROUPS: Record<string, string[]> = {
+  document: ['pdf', 'doc', 'docx', 'document', 'documents', 'file', 'files', 'paper', 'report', 'contract'],
+  text_content: ['article', 'articles', 'blog', 'blogs', 'email', 'emails', 'text', 'texts', 'webpage', 'webpages'],
+  video: ['video', 'videos', 'youtube', 'tiktok', 'reels', 'shorts', 'mp4'],
+  image: ['image', 'images', 'photo', 'photos', 'picture', 'pictures', 'png', 'jpg', 'jpeg'],
+  audio: ['audio', 'podcast', 'voice', 'mp3', 'transcript', 'transcription'],
+}
+
+const TASK_GROUPS: Record<string, string[]> = {
+  summarize: ['summarize', 'summarise', 'summarizer', 'summariser', 'summary', 'summaries', 'summarization', 'summarisation', 'key points', 'main points', 'notes'],
+  compress: ['compress', 'compression', 'reduce size', 'file size', 'smaller', 'resize'],
+  convert: ['convert', 'converter', 'conversion', 'to text', 'ocr', 'extract text', 'extractor', 'rip text', 'copy text', 'recognize text', 'recognition'],
+  edit: ['edit', 'editor', 'merge', 'split', 'annotate', 'annotator', 'sign', 'fill', 'add text', 'type on'],
+  protect: ['unlock', 'lock', 'protect', 'unprotect', 'password', 'permissions'],
+  chat_read: ['chat', 'read', 'reader', 'ask'],
+  study: ['flashcard', 'flashcards', 'study guide', 'study tools', 'studying'],
+  translate: ['translate', 'translation'],
+}
+
+function isCurrentPageKeywordTextMatch(keyword: string, primaryKeyword: string): boolean {
+  const primaryFormats = groupMatch(primaryKeyword, FORMAT_GROUPS)
+  const primaryTasks = groupMatch(primaryKeyword, TASK_GROUPS)
+  if (primaryFormats.size === 0 && primaryTasks.size === 0) return true
+
+  const keywordFormats = groupMatch(keyword, FORMAT_GROUPS)
+  const keywordTasks = groupMatch(keyword, TASK_GROUPS)
+
+  if (primaryFormats.size > 0 && keywordFormats.size > 0 && !hasSharedGroup(primaryFormats, keywordFormats)) {
+    return false
+  }
+  if (primaryTasks.size > 0 && keywordTasks.size > 0 && !hasSharedGroup(primaryTasks, keywordTasks)) {
+    return false
+  }
+  if (primaryFormats.size > 0 && primaryTasks.size > 0 && keywordFormats.size === 0 && keywordTasks.size === 0) {
+    return false
+  }
+  if (primaryFormats.size > 0 && keywordFormats.size === 0 && keywordTasks.size > 0) {
+    return false
+  }
+  if (primaryTasks.size > 0 && keywordTasks.size === 0 && keywordFormats.size === 0) {
+    return false
+  }
+
+  return true
+}
+
+function applyExactMetrics(result: unknown, rows: MetricRow[], primaryKeyword: string): unknown {
   if (!result || typeof result !== 'object') return result
 
   const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
@@ -49,6 +124,7 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
   const data = result as Record<string, any>
   const unsupported: Array<Record<string, any>> = []
   const corrections: Array<Record<string, any>> = []
+  const currentPageMismatches: Array<Record<string, any>> = []
 
   function patchKeywordLike(item: unknown, section: string) {
     if (!item || typeof item !== 'object') return false
@@ -77,6 +153,19 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
       } else {
         target.note = 'Unsupported AI suggestion. Metrics removed because no uploaded/pasted keyword row matched this keyword.'
       }
+      return false
+    }
+
+    if (
+      (section === 'supporting_keywords' || section === 'longtail_keywords') &&
+      !isCurrentPageKeywordTextMatch(row.keyword, primaryKeyword)
+    ) {
+      currentPageMismatches.push({
+        section,
+        keyword_id: row.keyword_id ?? null,
+        keyword: row.keyword,
+        reason: 'Keyword text does not match the submitted current-page object/task. Page/topic metadata may still inform new page opportunities.',
+      })
       return false
     }
 
@@ -156,6 +245,7 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
   data.data_audit = {
     unsupported_ai_suggestions: unsupported,
     metric_corrections_applied: corrections,
+    current_page_mismatches_removed: currentPageMismatches,
   }
 
   return data
@@ -300,7 +390,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      result: applyExactMetrics(result, filtered),
+      result: applyExactMetrics(result, filtered, primaryKeyword),
       stats: { ...stats, sentToAI: filtered.length },
     })
   } catch (err) {
