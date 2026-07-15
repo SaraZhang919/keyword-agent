@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 
 type PromptResponse = {
   prompt: string
+  brandScope: string
   isDefault: boolean
   kvUnavailable?: boolean
 }
@@ -13,7 +14,7 @@ const decisionPatterns = [
     title: 'Primary Keyword',
     pattern: 'Choose the strongest realistic target keyword for the current page. The submitted keyword is only a candidate, not automatically the final target.',
     criteria: [
-      'Use broad_match rows first; every metric-backed choice must include a valid keyword_id from parsed data.',
+      'Use only IDs classified as current-page fit; every metric-backed choice must include a valid keyword_id from parsed data.',
       'Reject brand terms and current_page_gap competitor keywords as primary targets unless the page type is explicitly a comparison/blog angle.',
       'Judge intent fit first: the searcher goal must match what the selected page type can satisfy.',
       'Judge page-type fit using floors: Tool 500+ volume with transactional/commercial intent; Feature 200+ commercial intent; Blog 100+ informational/commercial intent; GEO 50+ with location modifier; Docs 30+ informational intent.',
@@ -29,10 +30,10 @@ const decisionPatterns = [
     title: 'Supporting Keywords',
     pattern: 'Find 5-10 same-page keywords that deepen the current page, not separate future pages.',
     criteria: [
-      'Use broad_match rows first; current_page_gap rows can support only when they exactly match the current page job.',
+      'Use only current_page_ids. Source roles add evidence but cannot make a different task fit the page.',
       'Exclude brand terms and competitor-gap terms from same-page support unless the page is a comparison/blog page.',
       'Prioritize Priority KD<40 keywords.',
-      'Allow at most 2 Mid-term KD40-80 keywords, only if volume is strong and intent/page fit justify difficulty.',
+      'Allow realistic Mid-term KD40-80 variants when volume, intent, and exact page-task fit justify them; do not suppress a useful variant by an arbitrary quota.',
       'Exclude Long-term KD>80 keywords.',
       'Prefer exact page-relevant broad_match terms first, then custom rows when they add semantic depth.',
       'Keep keywords close enough to fit naturally into page sections, FAQs, feature blocks, or comparison notes.',
@@ -44,7 +45,7 @@ const decisionPatterns = [
     title: 'Longtail Keywords',
     pattern: 'Select 5-15 narrower searches the current page can answer without becoming a separate page.',
     criteria: [
-      'Use broad_match rows first, then current_page_gap rows for unanswered current-page questions or competitor coverage.',
+      'Use only current_page_ids for unanswered current-page questions, modifiers, and workflows.',
       'Prefer question, how-to, use-case, tutorial, SERP-feature, and specific workflow queries.',
       'Informational longtails can win even with slightly worse KD if Featured Snippet, People Also Ask, or AI Overview opportunity is strong.',
       'Competitor/brand longtails are allowed only for Blog comparison, alternative, or migration intent.',
@@ -57,11 +58,11 @@ const decisionPatterns = [
     title: 'New Page Opportunities',
     pattern: 'Scan all keywords for clusters that deserve their own future page, independent of the current page.',
     criteria: [
-      'Prioritize page_cluster rows because they contain Page, Topic, or Page type context.',
+      'Use only new_page_ids. Page/topic/page type context can validate a cluster, but cannot create an opportunity by itself.',
       'Cluster by topic, intent, user task, audience, content format, platform, or product/function signal.',
       'Use the best provided keyword as the page primary keyword and include primary_keyword_id; do not invent keyword metrics.',
       'Include 2-5 provided supporting keywords when available.',
-      'Suggest page types such as Blog Post, Feature Page, Online Tool Page, Comparison Page, Use-case Page, GEO Page, Template/Resource Page, or Docs Page.',
+      'Suggest Product, Feature, Online Tool, Blog, GEO, Comparison, Use-case, Docs, or Template/Resource pages from the query intent and the persistent Brand Strategy Scope.',
       'Explain why the cluster deserves its own page instead of being folded into the current page.',
       'Translate the pattern into a product_or_function_idea only when there is a clear user job.',
       'Prioritize by intent fit, volume signal, KD realism, commercial value, and content feasibility.',
@@ -73,7 +74,7 @@ const decisionPatterns = [
     pattern: 'Generate 3-8 audience-aware article ideas only when a specific target audience is selected.',
     criteria: [
       'If Target Audience is All / Undefined or blank, return an empty array.',
-      'Use keyword, topic, new-page, product/function, and competitor signals as idea seeds.',
+      'Use keyword, topic, new-page, product/function, competitor, and corroborated seed signals as idea seeds.',
       'Focus on Blog Post, GEO Page, Docs Page, Use-case Article, and Comparison Article.',
       'For each idea, explain why the audience needs it, pain points, trigger moment, current workaround, better solution angle, outline, proof needed, and product connection.',
       'Prefer practical audience-pain-led angles over generic SEO titles.',
@@ -97,7 +98,7 @@ const decisionPatterns = [
     title: 'Missing Exports',
     pattern: 'Flag missing data clusters that could change the recommendation quality.',
     criteria: [
-      'Look for absent but expected modifier groups, formats, competitor sets, use-case clusters, language variants, or platform terms.',
+      'Look for absent but expected modifier groups, formats, competitor sets, use-case clusters, language variants, platform terms, or seed phrases without measured corroboration.',
       'Recommend missing exports when the available data is too narrow to validate a strong primary or page cluster.',
       'Use this as a data-quality warning, not as a keyword invention area.',
       'Limit to the highest-impact missing clusters.',
@@ -355,21 +356,21 @@ export default function GuidePage() {
             <ol style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-dim)' }}>
               <li>Parse all valid CSV/XLSX sheets and pasted rows under their section labels and source roles.</li>
               <li>Normalize column aliases: KD/KD%/Keyword Difficulty/Difficulty, Volume/Search Volume/Avg. Monthly Searches, and Com./Competitive Density.</li>
-              <li>Remove keywords with volume below 30.</li>
+              <li>Remove ordinary keywords with volume below 30. Tight access/trust modifiers below 30 are retained only as non-target wording guidance when their stripped base exactly matches a measured current-page term.</li>
               <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
               <li>Assign stable keyword_id values after filtering and sorting.</li>
-              <li>Select up to 500 keywords with balanced buckets: head terms, current-page gaps, low-KD opportunities, placement/longtail signals, page clusters, and final opportunity-score fill.</li>
-              <li>Keep volume-first coverage for primary/supporting decisions while protecting lower-volume, high-intent opportunities from being dropped.</li>
+              <li>Select up to 500 rows with volume-first source-role coverage plus question, access, trust, comparison, and specific multi-word phrase protection.</li>
+              <li>Parse Seed keyword as a non-metric discovery signal. It can strengthen a corroborated future cluster or become a Missing Export request, never a keyword target.</li>
             </ol>
           </Card>
 
           <Card title="LLM Data Flow">
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
               gap: '10px',
             }}>
-              {['Form inputs + source roles', 'Merged keyword list + IDs', 'Active prompt', 'OpenAI JSON result', 'Metric audit + UI/report'].map((step, i) => (
+              {['Form inputs + source roles', 'Merged keyword list + IDs', 'Stage 1: ID classification', 'Stage 2: strategy pools', 'Metric audit', 'UI/report'].map((step, i) => (
                 <div key={step} style={{
                   background: 'var(--surface-2)',
                   border: '1px solid var(--border)',
@@ -382,6 +383,33 @@ export default function GuidePage() {
                 </div>
               ))}
             </div>
+          </Card>
+
+          <Card title="Persistent Brand Strategy Scope">
+            <p style={{ color: 'var(--text-dim)', margin: 0 }}>
+              This is an Admin-managed setting used only for future page opportunities and article ideation. Change it when the broader brand goal changes; it never broadens current-page keyword selection.
+            </p>
+            {promptData?.brandScope && (
+              <pre style={{ margin: '12px 0 0', whiteSpace: 'pre-wrap', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '10px', color: 'var(--text-muted)', fontSize: '11px' }}>{promptData.brandScope}</pre>
+            )}
+          </Card>
+
+          <Card title="Two-Stage Pool Logic">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
+              {[
+                ['Current Page IDs', 'Only these rows can become Primary, Supporting, or Longtail. Keyword text must match the submitted page job.'],
+                ['New Page IDs', 'Different user jobs that fit Brand Strategy Scope. They can become future Product, Tool, Blog, GEO, Docs, or workflow opportunities.'],
+                ['Out-of-Brand IDs', 'Terms that fit neither the submitted page nor the brand scope. They do not enter recommendations.'],
+              ].map(([label, text]) => (
+                <div key={label} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '12px' }}>
+                  <SmallLabel>{label}</SmallLabel>
+                  <p style={{ margin: '6px 0 0', color: 'var(--text-dim)' }}>{text}</p>
+                </div>
+              ))}
+            </div>
+            <p style={{ margin: '12px 0 0', color: 'var(--text-muted)', fontSize: '11px' }}>
+              A row can belong to both Current Page and New Page pools only when both uses are genuinely valid. Source roles describe where the data came from; pools decide where the keyword may be recommended.
+            </p>
           </Card>
 
           <Card title="Global Ranking Logic">
@@ -439,6 +467,9 @@ export default function GuidePage() {
               <li>Use Admin to change the prompt; this guide is read-only.</li>
               <li>If article ideas do not appear, check that Target Audience is not All / Undefined.</li>
               <li>If new page opportunities are weak, tune cluster rules around intent, task, format, platform, audience, or product function.</li>
+              <li>Use Brand Strategy Scope to decide which broader future themes are in scope. It applies only to New Page Opportunities and Article Idea Expansions.</li>
+              <li>Below-30 access/trust wording is not a target keyword. It appears only when it is a tight modifier of a measured current-page term.</li>
+              <li>Seed phrases are discovery signals only. Without measured corroboration, they should appear as Missing Export guidance rather than ranked keywords.</li>
               <li>If metrics look wrong, inspect source roles and keyword_id matching first. The API now removes metrics from AI suggestions that do not match parsed raw data.</li>
               <li>If a file type is classified incorrectly, change the section role manually before running the analysis.</li>
             </ul>

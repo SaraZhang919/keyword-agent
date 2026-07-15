@@ -206,8 +206,7 @@ function AdminContent() {
               SYSTEM PROMPT
             </span>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              Use <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '3px' }}>{'{{PAGE_TYPE}}'}</code> and{' '}
-              <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '3px' }}>{'{{PRIMARY_KEYWORD}}'}</code> as placeholders
+              Runtime placeholders: {'{{PAGE_TYPE}}'}, {'{{PRIMARY_KEYWORD}}'}, {'{{TARGET_AUDIENCE}}'}, {'{{BRAND_SCOPE}}'}
             </span>
           </div>
           {loading ? (
@@ -232,7 +231,9 @@ function AdminContent() {
           <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '10px' }}>TIPS</div>
           <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-muted)', fontSize: '11px', lineHeight: '2' }}>
             <li>The prompt is injected as the <strong style={{ color: 'var(--text)' }}>system message</strong> for each generation</li>
-            <li>{'{{PAGE_TYPE}}'} and {'{{PRIMARY_KEYWORD}}'} are replaced at runtime with the user's inputs</li>
+            <li>{'{{PAGE_TYPE}}'}, {'{{PRIMARY_KEYWORD}}'}, {'{{TARGET_AUDIENCE}}'}, and {'{{BRAND_SCOPE}}'} are replaced at runtime</li>
+            <li>Keep the Current-Page Boundary, Strategy Pool Boundaries, and Page Opportunity Routing rules intact; they separate current-page keywords from broader brand opportunities.</li>
+            <li>Brand Strategy Scope affects only New Page Opportunities and Article Idea Expansions. Change it when the brand goal changes.</li>
             <li>Always end the prompt requesting <strong style={{ color: 'var(--text)' }}>pure JSON output</strong> — no markdown fences</li>
             <li>Keep the JSON schema instruction intact — removing it will break result parsing</li>
             <li>Changes apply immediately to all new generations (no redeploy needed)</li>
