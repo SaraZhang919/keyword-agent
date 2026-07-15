@@ -12,6 +12,7 @@ function AdminContent() {
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [brandScope, setBrandScope] = useState('')
   const [isDefault, setIsDefault] = useState(true)
   const [kvUnavailable, setKvUnavailable] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -42,6 +43,7 @@ function AdminContent() {
     const res = await fetch('/api/prompt')
     const data = await res.json()
     setPrompt(data.prompt)
+    setBrandScope(data.brandScope ?? '')
     setIsDefault(data.isDefault)
     setKvUnavailable(data.kvUnavailable ?? false)
     setLoading(false)
@@ -53,7 +55,7 @@ function AdminContent() {
     const res = await fetch('/api/prompt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, brandScope }),
     })
     setSaving(false)
     if (res.ok) {
@@ -174,6 +176,23 @@ function AdminContent() {
             </div>
           </div>
         )}
+
+        {/* Prompt editor */}
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '16px 20px', marginBottom: '16px'
+        }}>
+          <label style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '8px' }}>
+            BRAND STRATEGY SCOPE
+          </label>
+          <textarea
+            value={brandScope}
+            onChange={e => setBrandScope(e.target.value)}
+            style={{ width: '100%', minHeight: '72px', padding: '10px 12px', resize: 'vertical', lineHeight: 1.6 }}
+          />
+          <p style={{ margin: '8px 0 0', color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.5 }}>
+            Used only for New Page Opportunities and Article Idea Expansions. Update it when the broader brand goal changes.
+          </p>
+        </div>
 
         {/* Prompt editor */}
         <div style={{

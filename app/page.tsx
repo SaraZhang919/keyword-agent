@@ -44,6 +44,7 @@ interface PageStrategyNotes {
   content_format: string
   biggest_opportunity: string
   primary_risk: string
+  low_demand_modifier_guidance?: string[]
 }
 
 interface MissingExport {
@@ -796,6 +797,11 @@ export default function ToolPage() {
                       <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-dim)', lineHeight: '1.7' }}>{value}</p>
                     </div>
                   ))}
+                  {strategyNotes.low_demand_modifier_guidance?.length ? (
+                    <div style={{ fontSize: '11px', color: 'var(--warn)', lineHeight: 1.6 }}>
+                      <strong>Low-demand wording:</strong> {strategyNotes.low_demand_modifier_guidance.join(' ')}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p style={{ margin: 0, color: 'var(--text-dim)', lineHeight: '1.7', fontSize: '12px' }}>{strategyString}</p>

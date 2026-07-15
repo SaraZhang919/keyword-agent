@@ -27,6 +27,7 @@ type PageStrategyNotes = {
   content_format?: string
   biggest_opportunity?: string
   primary_risk?: string
+  low_demand_modifier_guidance?: string[]
 }
 
 type NewPageOpportunity = {
@@ -184,6 +185,9 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
     lines.push(`**Content Format:** ${paragraph(notes.content_format)}`, '')
     lines.push(`**Biggest Opportunity:** ${paragraph(notes.biggest_opportunity)}`, '')
     lines.push(`**Primary Risk:** ${paragraph(notes.primary_risk)}`, '')
+    if (notes.low_demand_modifier_guidance?.length) {
+      lines.push(`**Low-Demand Wording:** ${notes.low_demand_modifier_guidance.map(paragraph).join(' ')}`, '')
+    }
   } else {
     lines.push('_None._', '')
   }

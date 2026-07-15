@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DEFAULT_PROMPT, isCompatiblePrompt } from '@/lib/prompt'
+import { DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt } from '@/lib/prompt'
 
 function isAdminAuthed(request: NextRequest): boolean {
   const expected = process.env.ADMIN_PASSWORD
@@ -21,13 +21,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const kv = await getKV()
-    const saved = await kv.get<string>('keyword-strategy-prompt')
+    const [saved, savedBrandScope] = await Promise.all([
+      kv.get<string>('keyword-strategy-prompt'),
+      kv.get<string>('keyword-strategy-brand-scope'),
+    ])
     if (saved && isCompatiblePrompt(saved)) {
-      return NextResponse.json({ prompt: saved, isDefault: false })
+      return NextResponse.json({ prompt: saved, brandScope: savedBrandScope?.trim() || DEFAULT_BRAND_SCOPE, isDefault: false })
     }
-    return NextResponse.json({ prompt: DEFAULT_PROMPT, isDefault: true })
+    return NextResponse.json({ prompt: DEFAULT_PROMPT, brandScope: savedBrandScope?.trim() || DEFAULT_BRAND_SCOPE, isDefault: true })
   } catch {
-    return NextResponse.json({ prompt: DEFAULT_PROMPT, isDefault: true, kvUnavailable: true })
+    return NextResponse.json({ prompt: DEFAULT_PROMPT, brandScope: DEFAULT_BRAND_SCOPE, isDefault: true, kvUnavailable: true })
   }
 }
 
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Admin access required.' }, { status: 401 })
   }
 
-  const { prompt } = await request.json()
+  const { prompt, brandScope } = await request.json()
   if (
     !prompt?.includes('{{PAGE_TYPE}}') ||
     !prompt?.includes('{{PRIMARY_KEYWORD}}') ||
@@ -47,9 +50,15 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
+  if (typeof brandScope !== 'string' || !brandScope.trim()) {
+    return NextResponse.json({ error: 'Brand Strategy Scope is required.' }, { status: 400 })
+  }
   try {
     const kv = await getKV()
-    await kv.set('keyword-strategy-prompt', prompt)
+    await Promise.all([
+      kv.set('keyword-strategy-prompt', prompt),
+      kv.set('keyword-strategy-brand-scope', brandScope.trim()),
+    ])
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: 'KV not configured — prompt not saved.' }, { status: 500 })
@@ -63,7 +72,10 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const kv = await getKV()
-    await kv.del('keyword-strategy-prompt')
+    await Promise.all([
+      kv.del('keyword-strategy-prompt'),
+      kv.del('keyword-strategy-brand-scope'),
+    ])
   } catch { /* ignore */ }
   return NextResponse.json({ success: true })
 }

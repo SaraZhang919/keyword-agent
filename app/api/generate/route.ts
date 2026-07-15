@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fileToRows, parseRows, pasteToRows, mergeAndFilter, formatForAI, type SourceRole } from '@/lib/prefilter'
-import { DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
+import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter, parseRows, pasteToRows, seedDiscoverySignals, type SourceRole } from '@/lib/prefilter'
+import { classificationPrompt, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
 
 function extractJsonObject(text: string): string | null {
   const cleaned = text.replace(/```json|```/g, '').trim()
@@ -23,11 +23,37 @@ type MetricRow = {
   source: string
 }
 
+type KeywordClassification = {
+  current_page_ids: string[]
+  new_page_ids: string[]
+  out_of_brand_ids: string[]
+}
+
+function validatedIds(value: unknown, availableIds: Set<string>): string[] {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(value.filter((id): id is string => typeof id === 'string' && availableIds.has(id))))
+}
+
+function parseClassification(value: unknown, availableIds: Set<string>): KeywordClassification | null {
+  if (!value || typeof value !== 'object') return null
+  const data = value as Record<string, unknown>
+  const currentPageIds = validatedIds(data.current_page_ids, availableIds)
+  const newPageIds = validatedIds(data.new_page_ids, availableIds)
+  const outOfBrandIds = validatedIds(data.out_of_brand_ids, availableIds)
+  if (currentPageIds.length === 0 && newPageIds.length === 0 && outOfBrandIds.length === 0) return null
+  return { current_page_ids: currentPageIds, new_page_ids: newPageIds, out_of_brand_ids: outOfBrandIds }
+}
+
 function normalizeKeyword(keyword: unknown): string {
   return String(keyword ?? '').trim().toLowerCase()
 }
 
-function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
+function applyExactMetrics(
+  result: unknown,
+  rows: MetricRow[],
+  classification: KeywordClassification,
+  lowDemandModifierGuidance: string[]
+): unknown {
   if (!result || typeof result !== 'object') return result
 
   const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
@@ -35,6 +61,9 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
   const data = result as Record<string, any>
   const unsupported: Array<Record<string, any>> = []
   const corrections: Array<Record<string, any>> = []
+  const boundaryRejections: Array<Record<string, string>> = []
+  const currentPageIds = new Set(classification.current_page_ids)
+  const newPageIds = new Set(classification.new_page_ids)
 
   function patchKeywordLike(item: unknown, section: string) {
     if (!item || typeof item !== 'object') return false
@@ -66,6 +95,11 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
       return false
     }
 
+    if ((section === 'primary_keyword' || section === 'supporting_keywords' || section === 'longtail_keywords') && !currentPageIds.has(row.keyword_id ?? '')) {
+      boundaryRejections.push({ section, keyword: row.keyword, reason: 'Not classified as current-page fit.' })
+      return false
+    }
+
     if (!rowById && rowByKeyword) {
       corrections.push({
         section,
@@ -88,7 +122,26 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
     return true
   }
 
-  patchKeywordLike(data.primary_keyword, 'primary_keyword')
+  const primaryWasValid = patchKeywordLike(data.primary_keyword, 'primary_keyword')
+  if (!primaryWasValid) {
+    const fallback = rows.find(row => currentPageIds.has(row.keyword_id ?? ''))
+    if (fallback) {
+      data.primary_keyword = {
+        keyword_id: fallback.keyword_id,
+        keyword: fallback.keyword,
+        volume: fallback.volume,
+        kd: fallback.kd ?? 0,
+        cpc: fallback.cpc ?? 0,
+        competition: fallback.competition ?? 0,
+        density: fallback.competition ?? 0,
+        trend: fallback.trend ?? '',
+        source: fallback.source,
+        source_role: fallback.source_role,
+        validated: false,
+        note: 'Fallback selected because the AI returned a primary keyword outside the classified current-page pool.',
+      }
+    }
+  }
   for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights']) {
     if (Array.isArray(data[key])) {
       data[key] = data[key].filter((item: unknown) => patchKeywordLike(item, key))
@@ -120,6 +173,15 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
         ].filter(Boolean).join(' ')
         continue
       }
+      if (!newPageIds.has(row.keyword_id ?? '')) {
+        boundaryRejections.push({ section: 'new_page_opportunities', keyword: row.keyword, reason: 'Not classified as an in-scope new-page opportunity.' })
+        target.primary_keyword = ''
+        target.primary_keyword_id = ''
+        target.primary_keyword_volume = 0
+        target.primary_keyword_kd = 0
+        target.difficulty_note = 'Removed because the keyword was not classified as an in-scope new-page opportunity.'
+        continue
+      }
       target.primary_keyword_id = row.keyword_id
       target.primary_keyword = row.keyword
       target.primary_keyword_volume = row.volume
@@ -139,9 +201,20 @@ function applyExactMetrics(result: unknown, rows: MetricRow[]): unknown {
     }
   }
 
+  if (Array.isArray(data.new_page_opportunities)) {
+    data.new_page_opportunities = data.new_page_opportunities.filter((item: Record<string, any>) => item?.primary_keyword_id)
+  }
+
+  data.page_strategy_notes = {
+    ...(data.page_strategy_notes && typeof data.page_strategy_notes === 'object' ? data.page_strategy_notes : {}),
+    low_demand_modifier_guidance: lowDemandModifierGuidance.map(keyword => `${keyword} — Low demand (<30); use only as optional access/trust wording.`),
+  }
+
   data.data_audit = {
     unsupported_ai_suggestions: unsupported,
     metric_corrections_applied: corrections,
+    keyword_classification: classification,
+    boundary_rejections: boundaryRejections,
   }
 
   return data
@@ -209,8 +282,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
 
-    // --- Get prompt (from KV if available, else default) ---
+    // --- Get persistent prompt and brand scope (from KV if available) ---
     let prompt = DEFAULT_PROMPT
+    let brandScope = DEFAULT_BRAND_SCOPE
     try {
       const { Redis } = await import('@upstash/redis')
       const kv = new Redis({
@@ -219,17 +293,80 @@ export async function POST(request: NextRequest) {
       })
       const saved = await kv.get<string>('keyword-strategy-prompt')
       if (saved && isCompatiblePrompt(saved)) prompt = saved
+      const savedBrandScope = await kv.get<string>('keyword-strategy-brand-scope')
+      if (savedBrandScope?.trim()) brandScope = savedBrandScope.trim()
     } catch {
-      // KV not configured, use default prompt
+      // KV not configured, use defaults
     }
 
-    const finalPrompt = prompt
+    const keywordList = formatForAI(filtered)
+    const availableIds = new Set(filtered.map(row => row.keyword_id!).filter(Boolean))
+
+    // --- Stage 1: classify exact IDs before generating recommendations ---
+    const classificationRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 3000,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: classificationPrompt(pageType, primaryKeyword, brandScope) },
+          { role: 'user', content: `Keyword TSV (${filtered.length} rows):\n\n${keywordList}` },
+        ],
+      }),
+    })
+
+    if (!classificationRes.ok) {
+      console.error('OpenAI classification error:', await classificationRes.text())
+      return NextResponse.json({ error: 'Keyword classification failed. Please run the analysis again.' }, { status: 500 })
+    }
+
+    const classificationData = await classificationRes.json()
+    const classificationText = classificationData.choices?.[0]?.message?.content ?? ''
+    const classificationJson = extractJsonObject(classificationText)
+    let classification: KeywordClassification | null = null
+    try {
+      classification = classificationJson ? parseClassification(JSON.parse(classificationJson), availableIds) : null
+    } catch {
+      classification = null
+    }
+
+    if (!classification) {
+      console.error('Invalid keyword classification:', classificationText.slice(0, 500))
+      return NextResponse.json({ error: 'Keyword classification returned invalid data. Please run the analysis again.' }, { status: 500 })
+    }
+
+    const currentPageRows = filtered.filter(row => classification!.current_page_ids.includes(row.keyword_id!))
+    const newPageRows = filtered.filter(row => classification!.new_page_ids.includes(row.keyword_id!))
+    const lowDemandModifierGuidance = findLowDemandModifierGuidance([...allRows, ...filtered], new Set(classification.current_page_ids))
+    const seeds = seedDiscoverySignals(allRows)
+
+    if (currentPageRows.length === 0) {
+      return NextResponse.json({ error: 'No uploaded keywords matched the submitted current page. Check the primary keyword or upload a closer broad-match export.' }, { status: 400 })
+    }
+
+    // --- Stage 2: generate strategy from separated, validated pools ---
+    const finalPrompt = `${prompt
       .replace('{{PAGE_TYPE}}', pageType)
       .replace('{{PRIMARY_KEYWORD}}', primaryKeyword)
       .replace('{{TARGET_AUDIENCE}}', targetAudience)
+      .replace('{{BRAND_SCOPE}}', brandScope)}
 
-    // --- Stage 2: OpenAI API ---
-    const keywordList = formatForAI(filtered)
+CLASSIFICATION POOLS (absolute rules):
+CURRENT_PAGE_KEYWORD_IDS: ${classification.current_page_ids.join(', ')}
+NEW_PAGE_KEYWORD_IDS: ${classification.new_page_ids.join(', ')}
+OUT_OF_BRAND_KEYWORD_IDS: ${classification.out_of_brand_ids.join(', ')}
+LOW_DEMAND_MODIFIER_GUIDANCE: ${lowDemandModifierGuidance.join(' | ') || 'None'}
+SEED_DISCOVERY_SIGNALS (no metrics, never keyword targets): ${seeds.join(' | ') || 'None'}
+
+For primary_keyword, supporting_keywords, and longtail_keywords, use only CURRENT_PAGE_KEYWORD_IDS.
+For new_page_opportunities, use only NEW_PAGE_KEYWORD_IDS and the Brand Strategy Scope.
+If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in missing_exports only.`
+
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -286,7 +423,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      result: applyExactMetrics(result, filtered),
+      result: applyExactMetrics(result, filtered, classification, lowDemandModifierGuidance),
       stats: { ...stats, sentToAI: filtered.length },
     })
   } catch (err) {

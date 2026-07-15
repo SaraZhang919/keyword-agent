@@ -28,6 +28,7 @@ export type KeywordRow = {
   page?: string
   topic?: string
   page_type?: string
+  seed_keyword?: string
   source_role: SourceRole
   source: string
 }
@@ -178,6 +179,7 @@ export function parseRows(
   const pageCol = findCol(headers, ['page'])
   const topicCol = findCol(headers, ['topic'])
   const pageTypeCol = findCol(headers, ['page type'])
+  const seedCol = findCol(headers, ['seed keyword', 'seed'])
 
   const rows: KeywordRow[] = []
   for (const row of raw) {
@@ -197,6 +199,7 @@ export function parseRows(
       page: pageCol ? String(row[pageCol] ?? '').trim() || undefined : undefined,
       topic: topicCol ? String(row[topicCol] ?? '').trim() || undefined : undefined,
       page_type: pageTypeCol ? String(row[pageTypeCol] ?? '').trim() || undefined : undefined,
+      seed_keyword: seedCol ? String(row[seedCol] ?? '').trim() || undefined : undefined,
       source_role: sourceRole,
       source,
     })
@@ -253,7 +256,7 @@ export function mergeAndFilter(
     .filter(row => row.source_role === 'broad_match' || row.source_role === 'page_cluster' || row.source_role === 'current_page_gap')
     .sort((a, b) => b.volume - a.volume)
   const longtailSignals = deduped
-    .filter(row => longtailPattern.test(row.keyword))
+    .filter(row => longtailPattern.test(row.keyword) || row.keyword.split(/\s+/).filter(Boolean).length >= 3)
     .sort((a, b) => b.volume - a.volume)
 
   const selected = new Map<string, KeywordRow>()
@@ -282,6 +285,36 @@ export function mergeAndFilter(
       bySourceRole,
     },
   }
+}
+
+const LOW_DEMAND_MODIFIER_PATTERN = /\b(free|online|no sign ?up|without (?:login|sign ?up|watermark)|safe|secure|private|privacy)\b/i
+
+const LOW_DEMAND_STRIP_PATTERN = /\b(?:is|are|the|a|an|free|online|no sign ?up|without (?:login|sign ?up|watermark)|safe|secure|private|privacy)\b/gi
+
+export function findLowDemandModifierGuidance(allRows: KeywordRow[], currentPageIds: Set<string>): string[] {
+  const eligibleBaseKeywords = new Set(
+    allRows
+      .filter(row => row.volume >= 30 && row.keyword_id && currentPageIds.has(row.keyword_id))
+      .map(row => row.keyword.toLowerCase().trim())
+  )
+
+  return Array.from(new Set(
+    allRows
+      .filter(row => row.volume > 0 && row.volume < 30 && LOW_DEMAND_MODIFIER_PATTERN.test(row.keyword))
+      .map(row => {
+        const base = row.keyword
+          .toLowerCase()
+          .replace(LOW_DEMAND_STRIP_PATTERN, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        return eligibleBaseKeywords.has(base) ? row.keyword : null
+      })
+      .filter((keyword): keyword is string => Boolean(keyword))
+  ))
+}
+
+export function seedDiscoverySignals(rows: KeywordRow[]): string[] {
+  return Array.from(new Set(rows.map(row => row.seed_keyword?.trim()).filter((seed): seed is string => Boolean(seed)))).slice(0, 80)
 }
 
 export function formatForAI(rows: KeywordRow[]): string {

@@ -1,10 +1,12 @@
 export const MODEL = 'gpt-4.1'
+export const DEFAULT_BRAND_SCOPE = 'AI documentation, PDF and document tools, document intelligence, AI workspace, and AI workflow products and content.'
 
 export function isCompatiblePrompt(prompt: string): boolean {
   return [
     '{{PAGE_TYPE}}',
     '{{PRIMARY_KEYWORD}}',
     '{{TARGET_AUDIENCE}}',
+    '{{BRAND_SCOPE}}',
     'article_idea_expansions',
     'keyword_id',
     'source_role',
@@ -13,7 +15,30 @@ export function isCompatiblePrompt(prompt: string): boolean {
     'trend',
     'CURRENT-PAGE BOUNDARY',
     'PAGE OPPORTUNITY ROUTING',
+    'STRATEGY POOL BOUNDARIES',
   ].every(requirement => prompt.includes(requirement))
+}
+
+export function classificationPrompt(pageType: string, primaryKeyword: string, brandScope: string): string {
+  return `You classify keyword IDs for an SEO strategy. Return only valid JSON.
+
+Submitted page type: ${pageType}
+Submitted primary keyword: ${primaryKeyword}
+Brand Strategy Scope for future pages only: ${brandScope}
+
+Classify the provided keyword TSV into these arrays of exact keyword IDs:
+- current_page_ids: keyword text matches the submitted page's core object and user task. These IDs may be used for primary, supporting, and longtail selection.
+- new_page_ids: keyword text represents a distinct user job that fits the Brand Strategy Scope and has potential for a separate product, feature, online tool, blog, GEO, comparison, use-case, docs, or resource page. This may overlap current_page_ids only when both uses are genuinely valid.
+- out_of_brand_ids: keyword text does not fit the submitted page or the Brand Strategy Scope.
+
+Rules:
+- Judge current-page fit from keyword text, page type, and primary keyword. Do not use page, topic, page_type, source label, volume, or KD to rescue a different task.
+- Do not classify a different function such as compression, PDF creation, editing, OCR, extraction, conversion, or generic text summarization as current-page fit unless that is explicitly the submitted page job.
+- Use page/topic/page_type only to understand clusters for future-page decisions.
+- A broad or generic phrase without the submitted page's object is not current-page fit when it represents a broader product category.
+- Do not invent IDs. Every returned ID must exist in the TSV.
+
+Return exactly: {"current_page_ids":["kw_0001"],"new_page_ids":["kw_0002"],"out_of_brand_ids":["kw_0003"]}`
 }
 
 export const DEFAULT_PROMPT = `
@@ -49,6 +74,7 @@ Each keyword row contains:
 Page Type: {{PAGE_TYPE}}
 Primary Keyword: {{PRIMARY_KEYWORD}}
 Target Audience for Article Idea Expansions: {{TARGET_AUDIENCE}}
+Brand Strategy Scope for future opportunities only: {{BRAND_SCOPE}}
 
 Important:
 - Target Audience is used ONLY for article_idea_expansions.
@@ -123,6 +149,13 @@ For primary_keyword, supporting_keywords, and longtail_keywords:
 - Do not use page, topic, page_type, source_role, volume, or KD to rescue a keyword with a different task.
 - A different task includes a separate product function such as compression, conversion, editing, OCR, extraction, generation, annotation, translation, security, or collaboration when that function is not the submitted page's job.
 - Route a different-task keyword to new_page_opportunities when it has its own valid cluster. Otherwise place it in excluded_keywords.
+
+STRATEGY POOL BOUNDARIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Current-page sections may use only keyword IDs supplied in CURRENT_PAGE_KEYWORD_IDS.
+- New Page Opportunities may use only keyword IDs supplied in NEW_PAGE_KEYWORD_IDS and must fit {{BRAND_SCOPE}}.
+- Never move a keyword from one pool to another based on page/topic metadata.
+- LOW_DEMAND_MODIFIER_GUIDANCE is wording only. Never include it in keyword tables, metrics, new-page scoring, or article ideas.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SOURCE TYPES — HOW TO USE EACH
@@ -814,7 +847,8 @@ Return ONLY valid JSON. No markdown, no text outside the JSON.
   "page_strategy_notes": {
     "content_format": "string",
     "biggest_opportunity": "string",
-    "primary_risk": "string"
+    "primary_risk": "string",
+    "low_demand_modifier_guidance": ["string"]
   },
   "new_page_opportunities": [
     {
