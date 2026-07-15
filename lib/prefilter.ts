@@ -248,7 +248,7 @@ export function mergeAndFilter(
   const deduped = Array.from(map.values())
   const afterDedup = deduped.length
   const byVolume = [...deduped].sort((a, b) => b.volume - a.volume)
-  const longtailPattern = /\b(how|what|why|best|safe|extract|key points?|notes?|citations?|source reference|research paper|academic|meeting notes?|report|legal contract|multilingual|summari[sz]e|pdf to notes?)\b/i
+  const longtailPattern = /\b(how|what|why|when|where|which|best|safe|secure|privacy|free|online|alternative|compare|comparison|vs\.?|without|no sign ?up)\b/i
   const rolePriority = deduped
     .filter(row => row.source_role === 'broad_match' || row.source_role === 'page_cluster' || row.source_role === 'current_page_gap')
     .sort((a, b) => b.volume - a.volume)
@@ -285,7 +285,7 @@ export function mergeAndFilter(
 }
 
 export function formatForAI(rows: KeywordRow[]): string {
-  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\tpage\ttopic\tpage_type\tserp_features'
+  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features'
   const body = rows
     .map(row => [
       row.keyword_id ?? '',
@@ -297,6 +297,7 @@ export function formatForAI(rows: KeywordRow[]): string {
       row.cpc ?? '',
       row.competition ?? '',
       row.intent ?? '',
+      row.trend ?? '',
       row.page ?? '',
       row.topic ?? '',
       row.page_type ?? '',

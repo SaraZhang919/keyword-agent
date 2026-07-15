@@ -1,21 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DEFAULT_PROMPT } from '@/lib/prompt'
+import { DEFAULT_PROMPT, isCompatiblePrompt } from '@/lib/prompt'
 
 function isAdminAuthed(request: NextRequest): boolean {
   const expected = process.env.ADMIN_PASSWORD
   return !!expected && request.cookies.get('admin_token')?.value === expected
-}
-
-function supportsArticleIdeaExpansions(prompt: string): boolean {
-  return (
-    prompt.includes('{{TARGET_AUDIENCE}}') &&
-    prompt.includes('article_idea_expansions') &&
-    prompt.includes('keyword_id') &&
-    prompt.includes('source_role') &&
-    prompt.includes('competition') &&
-    prompt.includes('serp_features') &&
-    prompt.includes('trend')
-  )
 }
 
 async function getKV() {
@@ -34,7 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     const kv = await getKV()
     const saved = await kv.get<string>('keyword-strategy-prompt')
-    if (saved && supportsArticleIdeaExpansions(saved)) {
+    if (saved && isCompatiblePrompt(saved)) {
       return NextResponse.json({ prompt: saved, isDefault: false })
     }
     return NextResponse.json({ prompt: DEFAULT_PROMPT, isDefault: true })
@@ -52,10 +40,10 @@ export async function POST(request: NextRequest) {
   if (
     !prompt?.includes('{{PAGE_TYPE}}') ||
     !prompt?.includes('{{PRIMARY_KEYWORD}}') ||
-    !supportsArticleIdeaExpansions(prompt)
+    !isCompatiblePrompt(prompt)
   ) {
     return NextResponse.json(
-      { error: 'Prompt must contain {{PAGE_TYPE}}, {{PRIMARY_KEYWORD}}, {{TARGET_AUDIENCE}}, article_idea_expansions, keyword_id, source_role, competition, serp_features, and trend rules.' },
+      { error: 'Prompt must contain the required page, audience, metric-safety, current-page boundary, and page-opportunity routing rules.' },
       { status: 400 }
     )
   }
