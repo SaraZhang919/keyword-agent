@@ -357,9 +357,8 @@ export default function GuidePage() {
               <li>Normalize column aliases: KD/KD%/Keyword Difficulty/Difficulty, Volume/Search Volume/Avg. Monthly Searches, and Com./Competitive Density.</li>
               <li>Remove keywords with volume below 30.</li>
               <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
-              <li>Classify each row as current_page_fit, separate_page_only, or off_topic based on the submitted page's object, task, and outcome.</li>
               <li>Assign stable keyword_id values after filtering and sorting.</li>
-              <li>Select up to 500 keywords with balanced buckets: head terms, current-page gaps, low-KD opportunities, placement/longtail signals, protected separate-page opportunities, page clusters, and final opportunity-score fill.</li>
+              <li>Select up to 500 keywords with balanced buckets: head terms, current-page gaps, low-KD opportunities, placement/longtail signals, page clusters, and final opportunity-score fill.</li>
               <li>Keep volume-first coverage for primary/supporting decisions while protecting lower-volume, high-intent opportunities from being dropped.</li>
             </ol>
           </Card>

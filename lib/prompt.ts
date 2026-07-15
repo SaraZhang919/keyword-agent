@@ -13,7 +13,7 @@ INPUT FORMAT
 
 Current app input override:
 The keyword list is a TSV table with only these guaranteed columns:
-  keyword_id, keyword_fit, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features
+  keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features
 Treat any older field names below as optional historical context only. If a field is not present in the TSV, it is unknown and must not be invented.
 
 Each keyword row contains:
@@ -38,7 +38,7 @@ Important:
 - Target Audience is used ONLY for article_idea_expansions.
 - It must NOT affect primary_keyword, supporting_keywords, longtail_keywords, competitor_insights, missing_exports, page_strategy_notes, or new_page_opportunities.
 - If Target Audience is "All / Undefined" or blank, article_idea_expansions MUST be an empty array.
-- The actual keyword input is provided as a TSV table with exact columns: keyword_id, keyword_fit, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features.
+- The actual keyword input is provided as a TSV table with exact columns: keyword_id, source_role, source, keyword, volume, kd, cpc, competition, intent, trend, page, topic, page_type, serp_features.
 - You MUST include keyword_id exactly from the provided TSV row whenever you output a keyword recommendation with metrics.
 - For new_page_opportunities, include primary_keyword_id exactly from the provided TSV row for the primary_keyword.
 - You MUST copy keyword text, volume, kd, cpc, competition, source_role, source, serp_features, and trend exactly from the provided TSV row whenever you output a keyword.
@@ -49,10 +49,6 @@ Important:
 - competition means paid competitive density. Use it as the density/paid saturation signal.
 - serp_features should guide content format, FAQ, snippet, demo, and placement decisions.
 - trend is a secondary signal. It should never outweigh intent fit, page-type fit, volume, KD realism, or relevance.
-- keyword_fit is a pre-AI relevance label:
-  - current_page_fit: may be used for primary_keyword, supporting_keywords, longtail_keywords, new_page_opportunities, competitor_insights, or excluded_keywords.
-  - separate_page_only: do NOT use for primary_keyword, supporting_keywords, or longtail_keywords. Use only for new_page_opportunities, missing_exports, competitor_insights, or excluded_keywords.
-  - off_topic: do not recommend except as excluded_keywords when notable.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GLOBAL DECISION HIERARCHY
@@ -86,16 +82,13 @@ Rules:
 - First identify the core object/workflow in {{PRIMARY_KEYWORD}} and {{PAGE_TYPE}}.
 - For primary_keyword, supporting_keywords, and longtail_keywords, prefer keywords that share the same core object/workflow or clearly satisfy the same page job.
 - Adjacent-intent keywords are allowed only when the user outcome overlaps. A different wording pattern is acceptable; a different product surface is not.
-- Current-page recommendations must use keyword_fit=current_page_fit.
-- keyword_fit=separate_page_only means the row may be useful to the site, but belongs to a different URL or content type. Do not place it in supporting_keywords or longtail_keywords.
 - If the seed keyword targets one object or media type, do not use keywords for a different object/media type as current-page supporting or longtail keywords unless the row itself clearly proves the same product/page can satisfy both.
-- If the seed keyword targets one task/outcome, do not use keywords for a different task/outcome as current-page supporting or longtail keywords, even when they share the same object.
 - Definition or encyclopedia queries should not be selected for tool/feature pages unless the submitted primary keyword itself has definition intent.
 - High volume does not rescue a keyword with weak topical relevance.
 - A keyword with topic drift may still appear in new_page_opportunities only if it forms a strong separate cluster and is genuinely useful for the same site strategy.
 
 Examples:
-- For a PDF summarizer page, PDF/document/note/extract-key-points keywords can be current-page relevant; PDF compression, PDF editing, generic email/text/article summarizers, YouTube/video summarizers, and generic PDF meaning keywords are not current-page fit.
+- For a PDF summarizer page, PDF/document/note/extract-key-points keywords can be relevant; YouTube/video summarizer and generic PDF meaning keywords are topic drift.
 - For a YouTube summarizer page, YouTube/video transcript/summary keywords can be relevant; PDF-only document terms are topic drift.
 - For a legal contract summarizer page, contract/legal/document review terms can be relevant; generic image/video tools are topic drift.
 
@@ -364,7 +357,6 @@ STEP 2 — SUPPORTING KEYWORDS (5–10)
 RULE 0 — BRAND EXCLUSION:
   brand:yes → never include as supporting, always send to competitor_insights
   source:competitor → never include as supporting
-  keyword_fit=separate_page_only or off_topic → never include as supporting
 
 RULE 1 — KD FILTER:
   Priority (KD<40) → include
@@ -405,7 +397,6 @@ Additional placement guidance:
 SECTION BOUNDARY:
   Supporting keywords are same-page head terms, variants, and broad modifiers with meaningful demand.
   Longtail keywords are narrower task, question, use-case, platform, access, trust, or comparison phrases.
-  Both supporting_keywords and longtail_keywords must use keyword_fit=current_page_fit.
   Do not put a broad same-page modifier phrase into longtail only because it has extra words.
   If a keyword is broad enough to guide an H2, feature block, CTA/value prop, or body section, prefer supporting_keywords.
   If a keyword is narrow enough to become an FAQ answer, use-case note, or exact task paragraph, prefer longtail_keywords.
@@ -439,7 +430,7 @@ SELECTION PRIORITY ORDER:
   1st → Priority (KD<40) + Featured Snippet or AI Overview
   2nd → Priority (KD<40) + People Also Ask
   3rd → Priority (KD<40) + "how to" keyword
-         Any "how to" with KD<40 can be included only when keyword_fit=current_page_fit and the task/outcome matches the current page.
+         ANY "how to" with KD<40 MUST be included regardless of volume
   4th → Mid-term (KD40–65) + vol ≥ 200 + relevant sub-topic modifier
          Sub-topic modifiers to scan for explicitly:
          feature/function terms, question terms, platform/device terms,
@@ -450,7 +441,6 @@ SELECTION PRIORITY ORDER:
   Exclude → brand:yes keywords (move to competitor_insights)
   Exclude → source:competitor keywords except blog comparison/alternative pages
   Exclude → KD=0 anomaly unless clearly relevant question-based or strategically useful
-  Exclude → keyword_fit=separate_page_only or off_topic from longtail_keywords
 
 TREND:
   Calculate for each. Declining + vol < 100 → exclude.
@@ -583,7 +573,6 @@ STEP 8 — NEW PAGE OPPORTUNITIES
 
 After optimizing the current page, independently scan the full uploaded keyword set for distinct clusters that should become separate pages.
 Prioritize rows with source_role:page_cluster for this section, then validate with broad_match/current_page_gap rows when they reinforce the same topic.
-Rows with keyword_fit=separate_page_only are especially important here: they should not be used on the current page, but may indicate future page opportunities.
 
 Purpose:
 - Keep the original page optimization first.
@@ -618,7 +607,6 @@ Rules:
 - Do NOT invent metrics.
 - Do NOT invent supporting keywords that are not in the input.
 - A keyword can support both current-page placement and a future page idea if both are strategically true.
-- keyword_fit=separate_page_only can be used in new_page_opportunities when the cluster has enough demand or strategic value.
 - If no distinct future page opportunity is available, return an empty array.
 - Limit to the strongest opportunities only.
 
