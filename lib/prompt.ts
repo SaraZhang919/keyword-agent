@@ -38,6 +38,7 @@ Rules:
 - Do not classify a clearly unrelated function such as compression, creation, editing, OCR, extraction, conversion, translation, or collaboration as current-page fit unless it preserves the submitted page outcome or is explicitly part of the submitted page job.
 - Use page/topic/page_type only to understand clusters for future-page decisions.
 - A broad or generic phrase without the submitted page's object is not current-page fit when it represents a broader product category.
+- Conversion direction is part of the page job. If the submitted keyword clearly expresses X-to-Y, do not classify Y-to-X as current-page fit.
 - An ID may appear in both current_page_ids and new_page_ids when it is useful as current-page coverage and also has enough distinct intent for a future standalone page.
 - Do not invent IDs. Every returned ID must exist in the TSV.
 
@@ -151,6 +152,7 @@ For primary_keyword, supporting_keywords, and longtail_keywords:
 - Include only keywords whose text matches the submitted page's core object and user task.
 - Do not use page, topic, page_type, source_role, volume, or KD to rescue a keyword with a different task.
 - A different task includes a separate product function such as compression, conversion, editing, OCR, extraction, generation, annotation, translation, security, or collaboration when that function is not the submitted page's job.
+- For converter pages, source and target direction must match. X-to-Y and Y-to-X are different page jobs even though both are conversions.
 - Route a different-task keyword to new_page_opportunities when it has its own valid cluster. Otherwise place it in excluded_keywords.
 
 STRATEGY POOL BOUNDARIES
@@ -413,6 +415,7 @@ If no strong keyword exists:
 IMPORTANT:
 The selected primary keyword MAY differ from {{PRIMARY_KEYWORD}}
 if a stronger strategic target exists.
+It must still preserve the same page job. When the submitted keyword clearly expresses a conversion direction, never replace X-to-Y with Y-to-X.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 2 — SUPPORTING KEYWORDS (5–10)

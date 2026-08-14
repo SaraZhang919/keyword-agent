@@ -27,6 +27,9 @@ interface KeywordResult extends Record<string, unknown> {
   density?: number
   source?: string
   source_role?: string
+  source_file?: string
+  submitted_keyword?: string
+  selection_changed?: boolean
   content_placement?: string
   flag?: string | null
   use_case?: string
@@ -68,6 +71,7 @@ interface NewPageOpportunity {
   difficulty_note?: string
   source?: string
   source_role?: string
+  source_file?: string
 }
 
 interface ArticleIdeaExpansion {
@@ -412,6 +416,9 @@ function NewPageOpportunities({ rows }: { rows: NewPageOpportunity[] }) {
               )}
             </div>
           </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.6 }}>
+            Keyword ID: {item.primary_keyword_id || 'N/A'} · Source section: {item.source || 'N/A'} · Source file: {item.source_file || 'N/A'} · Role: {item.source_role || 'N/A'}
+          </div>
           {item.supporting_keywords && item.supporting_keywords.length > 0 && (
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
               Supporting: {item.supporting_keywords.join(', ')}
@@ -692,11 +699,15 @@ export default function ToolPage() {
           }}>v2</span>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button type="button" onClick={() => router.push('/help')} style={{
+            background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
+            padding: '5px 12px', fontSize: '11px'
+          }}>使用指南</button>
           {isAdmin && (
             <button onClick={() => router.push('/guide')} style={{
               background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)',
               padding: '5px 12px', fontSize: '11px'
-            }}>Guide</button>
+            }}>Logic Guide</button>
           )}
           {isAdmin ? (
             <button onClick={() => router.push('/admin')} style={{
@@ -759,8 +770,9 @@ export default function ToolPage() {
               borderRadius: '6px', padding: '20px', marginBottom: '16px'
             }}>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '12px' }}>
-                PRIMARY KEYWORD {result.primary_keyword.validated ? '· ✓ VALIDATED' : '· ⚠ SWAP SUGGESTED'}
+                PRIMARY KEYWORD · {result.primary_keyword.validated ? 'RECOMMENDED TARGET' : 'NEEDS MANUAL REVIEW'}
               </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>RECOMMENDED PRIMARY KEYWORD</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '18px', fontWeight: '600', color: result.primary_keyword.validated ? 'var(--accent)' : 'var(--warn)' }}>
                   {result.primary_keyword.keyword}
@@ -772,6 +784,27 @@ export default function ToolPage() {
                 {result.primary_keyword.intent && (
                   <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{result.primary_keyword.intent}</span>
                 )}
+              </div>
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px',
+                marginTop: '14px', padding: '12px', background: 'var(--surface-2)', borderRadius: '4px'
+              }}>
+                {[
+                  ['Submitted Keyword', result.primary_keyword.submitted_keyword || primaryKeyword],
+                  ['Input Decision', result.primary_keyword.selection_changed ? 'Replaced input' : 'Kept input'],
+                  ['Keyword ID', result.primary_keyword.keyword_id || 'N/A'],
+                  ['Source Section', result.primary_keyword.source || 'N/A'],
+                  ['Source File', result.primary_keyword.source_file || 'N/A'],
+                  ['Source Role', result.primary_keyword.source_role || 'N/A'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>{label.toUpperCase()}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px', overflowWrap: 'anywhere' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: '10px', fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                The submitted keyword is a candidate seed. “Recommended target” evaluates the selected keyword; it does not mean the original input was retained. <button type="button" onClick={() => router.push('/help#primary-keyword')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: '10px', cursor: 'pointer' }}>中文说明</button>
               </div>
               {result.primary_keyword.combined_signal && (
                 <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -836,7 +869,7 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button onClick={() => setShowNewPages(!showNewPages)} style={{
+                <button type="button" aria-expanded={showNewPages} onClick={() => setShowNewPages(!showNewPages)} style={{
                   width: '100%', background: 'none', border: 'none', padding: '14px 20px',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
@@ -846,6 +879,9 @@ export default function ToolPage() {
                 </button>
                 {showNewPages && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <div style={{ padding: '10px 20px 0', color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.6 }}>
+                      These clusters may justify separate URLs. Do not automatically add every opportunity to the current page.
+                    </div>
                     {result.new_page_opportunities?.length
                       ? <NewPageOpportunities rows={result.new_page_opportunities} />
                       : <EmptyState message="No distinct in-scope new-page opportunities were validated." />}
@@ -860,7 +896,7 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button onClick={() => setShowArticleIdeas(!showArticleIdeas)} style={{
+                <button type="button" aria-expanded={showArticleIdeas} onClick={() => setShowArticleIdeas(!showArticleIdeas)} style={{
                   width: '100%', background: 'none', border: 'none', padding: '14px 20px',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
@@ -870,6 +906,9 @@ export default function ToolPage() {
                 </button>
                 {showArticleIdeas && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <div style={{ padding: '10px 20px 0', color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.6 }}>
+                      Generated only for a specific Target Audience. “All / Undefined” deliberately skips this section.
+                    </div>
                     {result.article_idea_expansions?.length
                       ? <ArticleIdeaExpansions rows={result.article_idea_expansions} />
                       : <EmptyState message="No audience-specific article ideas were generated for this run." />}
@@ -884,7 +923,7 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button onClick={() => setShowCompetitor(!showCompetitor)} style={{
+                <button type="button" aria-expanded={showCompetitor} onClick={() => setShowCompetitor(!showCompetitor)} style={{
                   width: '100%', background: 'none', border: 'none', padding: '14px 20px',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
@@ -894,6 +933,9 @@ export default function ToolPage() {
                 </button>
                 {showCompetitor && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <div style={{ padding: '10px 20px 0', color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.6 }}>
+                      Optional discovery for alternative, comparison, and migration content—not mandatory targets for the current page.
+                    </div>
                     {result.competitor_insights.length
                       ? <CompetitorTable rows={result.competitor_insights} />
                       : <EmptyState message="No competitor keywords were validated for this run." />}
@@ -908,7 +950,7 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button onClick={() => setShowExcluded(!showExcluded)} style={{
+                <button type="button" aria-expanded={showExcluded} onClick={() => setShowExcluded(!showExcluded)} style={{
                   width: '100%', background: 'none', border: 'none', padding: '14px 20px',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--text-muted)', textAlign: 'left', cursor: 'pointer'
@@ -918,6 +960,9 @@ export default function ToolPage() {
                 </button>
                 {showExcluded && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.6, marginBottom: '8px' }}>
+                      Representative exclusions only; this is not a list of every unused keyword.
+                    </div>
                     {result.excluded_keywords.length > 0 ? result.excluded_keywords.map((kw, i) => (
                       <div key={i} style={{
                         display: 'flex', gap: '16px', padding: '6px 0',
@@ -938,7 +983,7 @@ export default function ToolPage() {
                 background: 'var(--surface)', border: '1px solid var(--warn)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
               }}>
-                <button onClick={() => setShowMissing(!showMissing)} style={{
+                <button type="button" aria-expanded={showMissing} onClick={() => setShowMissing(!showMissing)} style={{
                   width: '100%', background: 'none', border: 'none', padding: '14px 20px',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--warn)', textAlign: 'left', cursor: 'pointer'
@@ -948,6 +993,9 @@ export default function ToolPage() {
                 </button>
                 {showMissing && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.6, marginBottom: '8px' }}>
+                      Next step: research/export keyword data for these topics, upload it, and rerun. Ignore topics outside your business scope.
+                    </div>
                     {result.missing_exports?.length ? result.missing_exports.map((item, i) => (
                       <div key={i} style={{
                         display: 'flex', gap: '16px', padding: '6px 0',

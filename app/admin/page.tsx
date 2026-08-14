@@ -89,7 +89,7 @@ function AdminContent() {
           <h1 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>Admin Access</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '24px' }}>
             {unlockOnly
-              ? 'Enter admin password to unlock Guide and Prompt Editor options on the tool page.'
+              ? 'Enter admin password to unlock Logic Guide and Prompt Editor options on the tool page.'
               : 'Enter admin password to manage prompts'}
           </p>
           <form onSubmit={handleAdminLogin}>

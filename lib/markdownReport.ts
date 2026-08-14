@@ -10,6 +10,9 @@ type KeywordLike = {
   density?: number
   source?: string
   source_role?: string
+  source_file?: string
+  submitted_keyword?: string
+  selection_changed?: boolean
   content_placement?: string
   flag?: string | null
   use_case?: string
@@ -46,6 +49,7 @@ type NewPageOpportunity = {
   difficulty_note?: string
   source?: string
   source_role?: string
+  source_file?: string
 }
 
 type DataAudit = {
@@ -164,20 +168,24 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
   lines.push('## Primary Keyword', '')
   if (primary) {
     lines.push(table(
-      ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Intent', 'Trend', 'Source Role', 'Source', 'Validated'],
+      ['Submitted Keyword', 'Recommended Primary Keyword', 'Input Decision', 'Keyword ID', 'Volume', 'KD', 'Tag', 'Intent', 'Trend', 'Source Section', 'Source File', 'Source Role', 'Selection Status'],
       [[
-        primary.keyword_id,
+        primary.submitted_keyword,
         primary.keyword,
+        primary.selection_changed === undefined ? '-' : primary.selection_changed ? 'Replaced input' : 'Kept input',
+        primary.keyword_id,
         primary.volume,
         primary.kd,
         primary.kd_tag,
         primary.intent,
         primary.trend_direction,
-        primary.source_role,
         primary.source,
-        primary.validated === undefined ? '-' : primary.validated ? 'Yes' : 'No',
+        primary.source_file,
+        primary.source_role,
+        primary.validated === undefined ? '-' : primary.validated ? 'Recommended target' : 'Needs manual review',
       ]]
     ))
+    lines.push('_The submitted keyword is a candidate seed. Selection Status evaluates the recommended keyword, not whether the original input was retained._', '')
     if (primary.combined_signal) lines.push(`**Signal:** ${paragraph(primary.combined_signal)}`, '')
     if (primary.note) lines.push(`**Note:** ${paragraph(primary.note)}`, '')
   } else {
@@ -199,8 +207,9 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
   }
 
   lines.push('## New Page Opportunities', '')
+  lines.push('_These clusters may justify separate URLs; they should not automatically be added to the current page._', '')
   lines.push(table(
-    ['Page Title', 'Type', 'Primary ID', 'Primary Keyword', 'Volume', 'KD', 'Intent', 'Priority', 'Content Format'],
+    ['Page Title', 'Type', 'Keyword ID', 'Primary Keyword', 'Volume', 'KD', 'Intent', 'Priority', 'Content Format', 'Source Section', 'Source File', 'Source Role'],
     (result.new_page_opportunities ?? []).map(item => [
       item.page_title,
       item.page_type,
@@ -211,6 +220,9 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       item.intent,
       item.priority,
       item.content_format,
+      item.source,
+      item.source_file,
+      item.source_role,
     ])
   ))
   for (const item of result.new_page_opportunities ?? []) {
@@ -250,7 +262,7 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## Supporting Keywords', '')
   lines.push(table(
-    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Intent', 'Source Role', 'Placement', 'Flag'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Intent', 'Source Role', 'Source File', 'Placement', 'Flag'],
     (result.supporting_keywords ?? []).map(item => [
       item.keyword_id,
       item.keyword,
@@ -260,6 +272,7 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       item.trend_direction,
       item.intent,
       item.source_role,
+      item.source_file,
       item.content_placement,
       item.flag,
     ])
@@ -267,7 +280,7 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   lines.push('## Longtail Keywords', '')
   lines.push(table(
-    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Source Role', 'SERP', 'Content Format', 'Use Case'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Tag', 'Trend', 'Source Role', 'Source File', 'SERP', 'Content Format', 'Use Case'],
     (result.longtail_keywords ?? []).map(item => [
       item.keyword_id,
       item.keyword,
@@ -276,6 +289,7 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       item.kd_tag,
       item.trend_direction,
       item.source_role,
+      item.source_file,
       item.serp_features,
       item.content_format,
       item.use_case,
@@ -283,8 +297,9 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
   ))
 
   lines.push('## Competitor Insights', '')
+  lines.push('_Optional discovery for alternative, comparison, and migration content—not mandatory targets for the current page._', '')
   lines.push(table(
-    ['ID', 'Keyword', 'Volume', 'KD', 'Source Role', 'Source', 'Competitor Brand', 'Opportunity'],
+    ['ID', 'Keyword', 'Volume', 'KD', 'Source Role', 'Source', 'Source File', 'Competitor Brand', 'Opportunity'],
     (result.competitor_insights ?? []).map(item => [
       item.keyword_id,
       item.keyword,
@@ -292,18 +307,21 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       item.kd,
       item.source_role,
       item.source,
+      item.source_file,
       item.competitor_brand,
       item.opportunity,
     ])
   ))
 
   lines.push('## Missing Exports', '')
+  lines.push('_Next step: research/export keyword data for these topics, upload it, and rerun. Ignore topics outside your business scope._', '')
   lines.push(table(
     ['Topic', 'Reason'],
     (result.missing_exports ?? []).map(item => [item.topic, item.reason])
   ))
 
   lines.push('## Excluded Keywords', '')
+  lines.push('_Representative exclusions only; this is not a list of every unused keyword._', '')
   lines.push(table(
     ['Keyword', 'Reason'],
     (result.excluded_keywords ?? []).map(item => [item.keyword, item.reason])

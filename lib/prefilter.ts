@@ -29,6 +29,7 @@ export type KeywordRow = {
   topic?: string
   page_type?: string
   seed_keyword?: string
+  source_file?: string
   source_role: SourceRole
   source: string
 }
@@ -142,6 +143,7 @@ export function pasteToRows(
       kd: parseNumber(kdText),
       source_role: sourceRole === 'auto' ? 'custom' : sourceRole,
       source,
+      source_file: 'Pasted input',
     })
   }
 
@@ -158,7 +160,8 @@ export function pasteToRows(
 export function parseRows(
   raw: Record<string, string>[],
   source: string,
-  requestedRole: SourceRole = 'auto'
+  requestedRole: SourceRole = 'auto',
+  sourceFile?: string
 ): { rows: KeywordRow[]; error?: string } {
   if (!raw.length) return { rows: [] }
 
@@ -200,6 +203,7 @@ export function parseRows(
       topic: topicCol ? String(row[topicCol] ?? '').trim() || undefined : undefined,
       page_type: pageTypeCol ? String(row[pageTypeCol] ?? '').trim() || undefined : undefined,
       seed_keyword: seedCol ? String(row[seedCol] ?? '').trim() || undefined : undefined,
+      source_file: sourceFile,
       source_role: sourceRole,
       source,
     })

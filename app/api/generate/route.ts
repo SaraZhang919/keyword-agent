@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter, parseRows, pasteToRows, seedDiscoverySignals, type SourceRole } from '@/lib/prefilter'
 import { classificationPrompt, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
+import { hasOppositeConversionDirection } from '@/lib/conversionDirection'
 
 function extractJsonObject(text: string): string | null {
   const cleaned = text.replace(/```json|```/g, '').trim()
@@ -19,6 +20,7 @@ type MetricRow = {
   competition?: number
   trend?: string
   serp_features?: string
+  source_file?: string
   source_role?: SourceRole
   source: string
 }
@@ -76,6 +78,7 @@ function intersects(a: Set<string>, b: Set<string>): boolean {
 }
 
 function lexicalCurrentPageScore(row: MetricRow, primaryKeyword: string, pageType: string): number {
+  if (hasOppositeConversionDirection(row.keyword, primaryKeyword)) return -1
   const context = `${primaryKeyword} ${pageType}`
   const contextTokens = new Set(words(context).filter(token => !GENERIC_TOKENS.has(token)))
   const keywordTokens = new Set(words(row.keyword).filter(token => !GENERIC_TOKENS.has(token)))
@@ -96,6 +99,21 @@ function lexicalCurrentPageScore(row: MetricRow, primaryKeyword: string, pageTyp
 
   if (!exactRelation && !objectMatch && !taskMatch && overlap === 0) return -1
   return overlap * 3 + (objectMatch ? 4 : 0) + (taskMatch ? 4 : 0) + (exactRelation ? 6 : 0) + Math.log10(row.volume + 1)
+}
+
+function enforceConversionDirection(
+  classification: KeywordClassification,
+  rows: MetricRow[],
+  primaryKeyword: string
+): KeywordClassification {
+  const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
+  return {
+    ...classification,
+    current_page_ids: classification.current_page_ids.filter(id => {
+      const row = byId.get(id)
+      return !row || !hasOppositeConversionDirection(row.keyword, primaryKeyword)
+    }),
+  }
 }
 
 function expandCurrentPageClassification(
@@ -154,7 +172,8 @@ function applyExactMetrics(
   classification: KeywordClassification,
   lowDemandModifierGuidance: string[],
   lexicalFallbackIds: string[],
-  includeArticleIdeas: boolean
+  includeArticleIdeas: boolean,
+  submittedPrimaryKeyword: string
 ): unknown {
   const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
   const byKeyword = new Map(rows.map(row => [normalizeKeyword(row.keyword), row]))
@@ -225,6 +244,7 @@ function applyExactMetrics(
     if (row.serp_features) target.serp_features = row.serp_features
     target.source = row.source
     target.source_role = row.source_role
+    target.source_file = row.source_file
     return true
   }
 
@@ -243,10 +263,15 @@ function applyExactMetrics(
         trend: fallback.trend ?? '',
         source: fallback.source,
         source_role: fallback.source_role,
+        source_file: fallback.source_file,
         validated: false,
         note: 'Fallback selected because the AI returned a primary keyword outside the classified current-page pool.',
       }
     }
+  }
+  if (data.primary_keyword && typeof data.primary_keyword === 'object') {
+    data.primary_keyword.submitted_keyword = submittedPrimaryKeyword
+    data.primary_keyword.selection_changed = normalizeKeyword(data.primary_keyword.keyword) !== normalizeKeyword(submittedPrimaryKeyword)
   }
   for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights']) {
     data[key] = data[key].filter((item: unknown) => patchKeywordLike(item, key))
@@ -295,6 +320,7 @@ function applyExactMetrics(
       if (row.serp_features) target.serp_features = row.serp_features
       target.source = row.source
       target.source_role = row.source_role
+      target.source_file = row.source_file
       if (!rowById && rowByKeyword) {
         corrections.push({
           section: 'new_page_opportunities',
@@ -341,6 +367,7 @@ function applyExactMetrics(
       serp_features: row.serp_features ?? '',
       source: row.source,
       source_role: row.source_role,
+      source_file: row.source_file,
       trend_direction: 'Insufficient Data',
       ...(section === 'supporting_keywords'
         ? { content_placement: placement, flag: 'Server fallback from validated current-page pool.' }
@@ -419,7 +446,7 @@ export async function POST(request: NextRequest) {
       const { rows: rawRows, error: fileError } = await fileToRows(file)
       if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
 
-      const { rows, error: parseError } = parseRows(rawRows, label, role)
+      const { rows, error: parseError } = parseRows(rawRows, label, role, file.name)
       if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
 
       allRows.push(...rows)
@@ -503,6 +530,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Keyword classification returned invalid data. Please run the analysis again.' }, { status: 500 })
     }
 
+    classification = enforceConversionDirection(classification, filtered, primaryKeyword)
     const expandedClassification = expandCurrentPageClassification(classification, filtered, primaryKeyword, pageType)
     classification = expandedClassification.classification
     const currentPageRows = filtered.filter(row => classification.current_page_ids.includes(row.keyword_id!))
@@ -529,6 +557,7 @@ SEED_DISCOVERY_SIGNALS (no metrics, never keyword targets): ${seeds.join(' | ') 
 
 For primary_keyword, supporting_keywords, and longtail_keywords, use only CURRENT_PAGE_KEYWORD_IDS.
 For new_page_opportunities, use only NEW_PAGE_KEYWORD_IDS and the Brand Strategy Scope.
+When the submitted keyword expresses a source-to-target conversion, preserve that direction. Never replace X-to-Y with Y-to-X.
 If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in missing_exports only.`
 
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -594,7 +623,8 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
         classification,
         lowDemandModifierGuidance,
         expandedClassification.addedIds,
-        targetAudience.trim().toLowerCase() !== 'all / undefined'
+        targetAudience.trim().toLowerCase() !== 'all / undefined',
+        primaryKeyword
       ),
       stats: { ...stats, sentToAI: filtered.length },
     })
