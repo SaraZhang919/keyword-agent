@@ -57,8 +57,8 @@ const reportSections = [
   ['Supporting Keywords', '适合在同一页面 H2、功能、价值主张和正文中覆盖的相关关键词。', '将 Placement 建议映射到页面结构，避免为每个 supporting keyword 单独建页。'],
   ['Longtail Keywords', '更具体的问题、场景、平台、信任或使用方式关键词。', '优先用于 FAQ、H3、步骤、use case 和直接回答。'],
   ['Page Strategy Notes', '总结推荐内容形式、最大机会和主要风险。', '把它当作内容 brief 的方向提示，再结合真实 SERP 和产品能力判断。'],
-  ['New Page Opportunities', '数据中出现的独立搜索任务或 cluster，可能值得建立新 URL。', '先确认业务相关性，再决定 Product、Feature、Tool、Blog、GEO、Docs 或 Comparison 页面；不要全部塞进当前页。'],
-  ['Article Idea Expansions', '针对特定 Target Audience 的文章与场景扩展。', '只有选择具体 audience 才生成；All / Undefined 会确定跳过，不是随机缺失。'],
+  ['New Page Opportunities', '用于 idea brainstorming：根据数据中的独立搜索任务或 cluster 激发潜在新 URL 想法。它不是经过完整市场、SERP、产品和商业评审的最终建议。', '必须由人工确认搜索意图、真实 SERP、业务相关性、产品能力、内容重复和优先级，再决定是否创建 Product、Feature、Tool、Blog、GEO、Docs 或 Comparison 页面。'],
+  ['Article Idea Expansions', '用于 idea brainstorming：针对特定 Target Audience 生成文章和场景灵感。它不是已经完成事实核查、关键词验证或编辑评审的 content brief。', '只有选择具体 audience 才生成；All / Undefined 会确定跳过。使用前必须由人工检查主题价值、受众需求、事实、搜索意图、品牌适配和内容可行性。'],
   ['Competitor Insights', '品牌词、替代品、对比和迁移需求的发现区。', '可用于 alternative/comparison 内容研究，不是当前页面必须使用的关键词，也不一定每次都有。'],
   ['Missing Exports', '当前上传数据不足以验证、但可能影响结论的 topic 或 cluster。它是研究建议，不是已经确认有搜索量的关键词。', '针对该 topic 在 SEMrush 或其他工具中继续研究/导出，作为新 section 上传后重新运行；若不符合业务范围可以忽略。'],
   ['Excluded Keywords', 'Agent 主动解释的代表性未采用关键词。不会列出所有未显示的词。', '检查排除原因；若产品能力或页面意图判断有误，再调整输入、Source Role 或数据。'],
@@ -84,6 +84,14 @@ export default function HelpPage() {
           <p style={{ margin: 0, maxWidth: '780px', color: 'var(--text-dim)', lineHeight: 1.8, fontSize: '13px' }}>
             本工具把你上传的关键词数据转成页面级 SEO 策略：选择 Primary Keyword、组织同页关键词、发现独立新页面机会，并指出需要补充研究的数据。AI 推荐不是排名保证；所有显示的 Volume、KD、CPC 和 Competition 必须来自上传数据。
           </p>
+        </div>
+
+        <div role="note" style={{
+          background: 'rgba(245, 158, 11, 0.08)', border: '1px solid var(--warn)', borderRadius: '6px',
+          padding: '14px 16px', marginBottom: '16px', color: 'var(--text-dim)', fontSize: '12px', lineHeight: 1.8
+        }}>
+          <strong style={{ color: 'var(--warn)' }}>重要：Idea Brainstorming，不是最终审核结论。</strong><br />
+          New Page Opportunities 和 Article Idea Expansions 的用途是激发新页面、内容和产品方向。它们没有完成全面的 SERP、竞争、市场需求、产品可行性、事实和品牌评审。任何建议在进入 roadmap、建页或发布前，都必须由人工进一步研究、判断和审核。
         </div>
 
         <Section title="五分钟使用流程">
