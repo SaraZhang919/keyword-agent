@@ -27,15 +27,18 @@ Submitted primary keyword: ${primaryKeyword}
 Brand Strategy Scope for future pages only: ${brandScope}
 
 Classify the provided keyword TSV into these arrays of exact keyword IDs:
-- current_page_ids: keyword text matches the submitted page's core object and user task. These IDs may be used for primary, supporting, and longtail selection.
+- current_page_ids: keyword text matches the submitted page's core object, user task, or a close same-outcome modifier that can support an H2, feature block, CTA, use-case block, trust section, or FAQ. These IDs may be used for primary, supporting, and longtail selection.
 - new_page_ids: keyword text represents a distinct user job that fits the Brand Strategy Scope and has potential for a separate product, feature, online tool, blog, GEO, comparison, use-case, docs, or resource page. This may overlap current_page_ids only when both uses are genuinely valid.
 - out_of_brand_ids: keyword text does not fit the submitted page or the Brand Strategy Scope.
 
 Rules:
-- Judge current-page fit from keyword text, page type, and primary keyword. Do not use page, topic, page_type, source label, volume, or KD to rescue a different task.
-- Do not classify a different function such as compression, PDF creation, editing, OCR, extraction, conversion, or generic text summarization as current-page fit unless that is explicitly the submitted page job.
+- Judge current-page fit from keyword text, page type, and primary keyword. Do not use page, topic, page_type, source label, volume, or KD to rescue a clearly different task.
+- Include close modifier and placement families when they preserve the submitted page's object and outcome: access/value (free, online, no sign up), questions/FAQ (how, what, is, safe, best), feature/task wording, trust/privacy, comparison, platform, format, and use-case phrases.
+- Treat synonymous or adjacent same-outcome wording as current-page coverage. For example, notes or key-points wording can support a summarization workflow, while a truly separate function should remain outside the current-page pool.
+- Do not classify a clearly unrelated function such as compression, creation, editing, OCR, extraction, conversion, translation, or collaboration as current-page fit unless it preserves the submitted page outcome or is explicitly part of the submitted page job.
 - Use page/topic/page_type only to understand clusters for future-page decisions.
 - A broad or generic phrase without the submitted page's object is not current-page fit when it represents a broader product category.
+- An ID may appear in both current_page_ids and new_page_ids when it is useful as current-page coverage and also has enough distinct intent for a future standalone page.
 - Do not invent IDs. Every returned ID must exist in the TSV.
 
 Return exactly: {"current_page_ids":["kw_0001"],"new_page_ids":["kw_0002"],"out_of_brand_ids":["kw_0003"]}`

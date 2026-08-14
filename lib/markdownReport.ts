@@ -60,6 +60,12 @@ type DataAudit = {
     keyword?: string
     reason?: string
   }[]
+  lexical_current_page_expansions?: string[]
+  section_fallback_expansions?: {
+    section?: string
+    keyword_id?: string
+    keyword?: string
+  }[]
 }
 
 type ArticleIdeaExpansion = {
@@ -305,7 +311,9 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
 
   const unsupported = result.data_audit?.unsupported_ai_suggestions ?? []
   const corrections = result.data_audit?.metric_corrections_applied ?? []
-  if (unsupported.length || corrections.length) {
+  const lexicalExpansions = result.data_audit?.lexical_current_page_expansions ?? []
+  const sectionFallbacks = result.data_audit?.section_fallback_expansions ?? []
+  if (unsupported.length || corrections.length || lexicalExpansions.length || sectionFallbacks.length) {
     lines.push('## Data Audit', '')
     if (unsupported.length) {
       lines.push('### Unsupported AI Suggestions', '')
@@ -319,6 +327,16 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       lines.push(table(
         ['Section', 'Keyword', 'Reason'],
         corrections.map(item => [item.section, item.keyword, item.reason])
+      ))
+    }
+    if (lexicalExpansions.length) {
+      lines.push(`- Restored ${lexicalExpansions.length} same-page keyword ID(s) after an undersized Stage 1 classification.`, '')
+    }
+    if (sectionFallbacks.length) {
+      lines.push('### Section Fallback Expansions', '')
+      lines.push(table(
+        ['Section', 'Keyword ID', 'Keyword'],
+        sectionFallbacks.map(item => [item.section, item.keyword_id, item.keyword])
       ))
     }
   }

@@ -112,6 +112,12 @@ interface DataAudit {
     keyword?: string
     reason?: string
   }[]
+  lexical_current_page_expansions?: string[]
+  section_fallback_expansions?: {
+    section?: string
+    keyword_id?: string
+    keyword?: string
+  }[]
 }
 
 interface Stats {
@@ -437,6 +443,10 @@ function NewPageOpportunities({ rows }: { rows: NewPageOpportunity[] }) {
   )
 }
 
+function EmptyState({ message }: { message: string }) {
+  return <div style={{ padding: '16px 20px', color: 'var(--text-dim)', fontSize: '11px' }}>{message}</div>
+}
+
 function ArticleIdeaExpansions({ rows }: { rows: ArticleIdeaExpansion[] }) {
   return (
     <div style={{ padding: '14px 20px', display: 'grid', gap: '12px' }}>
@@ -493,7 +503,9 @@ function ArticleIdeaExpansions({ rows }: { rows: ArticleIdeaExpansion[] }) {
 function DataAuditNotice({ audit }: { audit?: DataAudit }) {
   const unsupported = audit?.unsupported_ai_suggestions ?? []
   const corrections = audit?.metric_corrections_applied ?? []
-  if (!unsupported.length && !corrections.length) return null
+  const lexicalExpansions = audit?.lexical_current_page_expansions ?? []
+  const sectionFallbacks = audit?.section_fallback_expansions ?? []
+  if (!unsupported.length && !corrections.length && !lexicalExpansions.length && !sectionFallbacks.length) return null
 
   return (
     <div style={{
@@ -511,6 +523,16 @@ function DataAuditNotice({ audit }: { audit?: DataAudit }) {
       {corrections.length > 0 && (
         <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
           Corrected {corrections.length} item{corrections.length === 1 ? '' : 's'} by exact keyword match when the AI missed or returned an invalid keyword ID.
+        </p>
+      )}
+      {lexicalExpansions.length > 0 && (
+        <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          Restored {lexicalExpansions.length} same-page keyword ID{lexicalExpansions.length === 1 ? '' : 's'} after an undersized Stage 1 classification.
+        </p>
+      )}
+      {sectionFallbacks.length > 0 && (
+        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          Refilled {sectionFallbacks.length} sparse supporting/longtail item{sectionFallbacks.length === 1 ? '' : 's'} from exact validated rows.
         </p>
       )}
     </div>
@@ -764,18 +786,18 @@ export default function ToolPage() {
             </div>
 
             {/* Supporting Keywords */}
-            {result.supporting_keywords?.length > 0 && (
-              <TableSection title="Supporting Keywords" count={result.supporting_keywords.length}>
-                <SupportingTable rows={result.supporting_keywords} />
-              </TableSection>
-            )}
+            <TableSection title="Supporting Keywords" count={result.supporting_keywords.length}>
+              {result.supporting_keywords.length > 0
+                ? <SupportingTable rows={result.supporting_keywords} />
+                : <EmptyState message="No supporting keywords met the current-page and metric-safety rules." />}
+            </TableSection>
 
             {/* Longtail Keywords */}
-            {result.longtail_keywords?.length > 0 && (
-              <TableSection title="Longtail Keywords" count={result.longtail_keywords.length}>
-                <LongtailTable rows={result.longtail_keywords} />
-              </TableSection>
-            )}
+            <TableSection title="Longtail Keywords" count={result.longtail_keywords.length}>
+              {result.longtail_keywords.length > 0
+                ? <LongtailTable rows={result.longtail_keywords} />
+                : <EmptyState message="No longtail keywords met the current-page and metric-safety rules." />}
+            </TableSection>
 
             {/* Page Strategy Notes */}
             <div style={{
@@ -809,7 +831,7 @@ export default function ToolPage() {
             </div>
 
             {/* New Page Opportunities (collapsible) */}
-            {result.new_page_opportunities && result.new_page_opportunities.length > 0 && (
+            {(
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
@@ -819,19 +841,21 @@ export default function ToolPage() {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
                 }}>
-                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>NEW PAGE OPPORTUNITIES ({result.new_page_opportunities.length})</span>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>NEW PAGE OPPORTUNITIES ({result.new_page_opportunities?.length ?? 0})</span>
                   <span style={{ fontSize: '11px' }}>{showNewPages ? '▲' : '▼'}</span>
                 </button>
                 {showNewPages && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
-                    <NewPageOpportunities rows={result.new_page_opportunities} />
+                    {result.new_page_opportunities?.length
+                      ? <NewPageOpportunities rows={result.new_page_opportunities} />
+                      : <EmptyState message="No distinct in-scope new-page opportunities were validated." />}
                   </div>
                 )}
               </div>
             )}
 
             {/* Article Idea Expansions (collapsible) */}
-            {result.article_idea_expansions && result.article_idea_expansions.length > 0 && (
+            {targetAudience !== 'All / Undefined' && (
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
@@ -841,19 +865,21 @@ export default function ToolPage() {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--accent)', textAlign: 'left', cursor: 'pointer'
                 }}>
-                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>ARTICLE IDEA EXPANSIONS ({result.article_idea_expansions.length})</span>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>ARTICLE IDEA EXPANSIONS ({result.article_idea_expansions?.length ?? 0})</span>
                   <span style={{ fontSize: '11px' }}>{showArticleIdeas ? '▲' : '▼'}</span>
                 </button>
                 {showArticleIdeas && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
-                    <ArticleIdeaExpansions rows={result.article_idea_expansions} />
+                    {result.article_idea_expansions?.length
+                      ? <ArticleIdeaExpansions rows={result.article_idea_expansions} />
+                      : <EmptyState message="No audience-specific article ideas were generated for this run." />}
                   </div>
                 )}
               </div>
             )}
 
             {/* Competitor Insights (collapsible) */}
-            {result.competitor_insights?.length > 0 && (
+            {(
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
@@ -868,14 +894,16 @@ export default function ToolPage() {
                 </button>
                 {showCompetitor && (
                   <div style={{ borderTop: '1px solid var(--border)' }}>
-                    <CompetitorTable rows={result.competitor_insights} />
+                    {result.competitor_insights.length
+                      ? <CompetitorTable rows={result.competitor_insights} />
+                      : <EmptyState message="No competitor keywords were validated for this run." />}
                   </div>
                 )}
               </div>
             )}
 
             {/* Excluded Keywords (collapsible) */}
-            {result.excluded_keywords?.length > 0 && (
+            {(
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
@@ -890,7 +918,7 @@ export default function ToolPage() {
                 </button>
                 {showExcluded && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
-                    {result.excluded_keywords.map((kw, i) => (
+                    {result.excluded_keywords.length > 0 ? result.excluded_keywords.map((kw, i) => (
                       <div key={i} style={{
                         display: 'flex', gap: '16px', padding: '6px 0',
                         borderBottom: i < result.excluded_keywords.length - 1 ? '1px solid var(--border)' : 'none'
@@ -898,14 +926,14 @@ export default function ToolPage() {
                         <span style={{ color: 'var(--text-muted)', minWidth: '180px', fontSize: '12px' }}>{kw.keyword}</span>
                         <span style={{ color: 'var(--text-muted)', fontSize: '11px', opacity: 0.7 }}>{kw.reason}</span>
                       </div>
-                    ))}
+                    )) : <EmptyState message="No keywords were explicitly excluded from the strategy." />}
                   </div>
                 )}
               </div>
             )}
 
             {/* Missing Exports (collapsible) */}
-            {result.missing_exports && result.missing_exports.length > 0 && (
+            {(
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--warn)', borderRadius: '6px',
                 overflow: 'hidden', marginBottom: '16px'
@@ -915,12 +943,12 @@ export default function ToolPage() {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: 'var(--warn)', textAlign: 'left', cursor: 'pointer'
                 }}>
-                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>⚠ MISSING EXPORTS ({result.missing_exports.length})</span>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.1em' }}>⚠ MISSING EXPORTS ({result.missing_exports?.length ?? 0})</span>
                   <span style={{ fontSize: '11px' }}>{showMissing ? '▲' : '▼'}</span>
                 </button>
                 {showMissing && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '12px 20px' }}>
-                    {result.missing_exports.map((item, i) => (
+                    {result.missing_exports?.length ? result.missing_exports.map((item, i) => (
                       <div key={i} style={{
                         display: 'flex', gap: '16px', padding: '6px 0',
                         borderBottom: i < result.missing_exports!.length - 1 ? '1px solid var(--border)' : 'none'
@@ -928,7 +956,7 @@ export default function ToolPage() {
                         <span style={{ color: 'var(--warn)', minWidth: '180px', fontSize: '12px', fontWeight: '500' }}>{item.topic}</span>
                         <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{item.reason}</span>
                       </div>
-                    ))}
+                    )) : <EmptyState message="No additional keyword exports were requested." />}
                   </div>
                 )}
               </div>

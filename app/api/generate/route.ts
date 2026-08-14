@@ -29,6 +29,106 @@ type KeywordClassification = {
   out_of_brand_ids: string[]
 }
 
+const GENERIC_TOKENS = new Set([
+  'a', 'an', 'and', 'app', 'best', 'for', 'free', 'from', 'how', 'in', 'is', 'no',
+  'of', 'online', 'or', 'software', 'the', 'to', 'tool', 'tools', 'up', 'what', 'with', 'without',
+])
+
+const TASK_GROUPS: Record<string, string[]> = {
+  summarize: ['summarize', 'summarise', 'summarizer', 'summariser', 'summary', 'summarization', 'notes', 'key points'],
+  compress: ['compress', 'compression', 'reduce size', 'file size'],
+  convert: ['convert', 'converter', 'conversion'],
+  edit: ['edit', 'editor', 'merge', 'split', 'annotate', 'sign', 'fill'],
+  extract: ['ocr', 'extract text', 'extractor', 'recognize text', 'recognition'],
+  generate: ['create', 'generate', 'generator', 'maker'],
+  protect: ['unlock', 'lock', 'protect', 'password', 'permissions'],
+  read_chat: ['read', 'reader', 'chat', 'ask'],
+  study: ['flashcard', 'flashcards', 'study guide', 'quiz'],
+  transcribe: ['transcribe', 'transcription', 'transcript'],
+  translate: ['translate', 'translation'],
+}
+
+const OBJECT_GROUPS: Record<string, string[]> = {
+  document: ['pdf', 'doc', 'docx', 'document', 'documents', 'paper', 'report', 'contract'],
+  video: ['video', 'videos', 'youtube', 'tiktok', 'reels', 'shorts', 'mp4'],
+  image: ['image', 'images', 'photo', 'photos', 'picture', 'pictures', 'png', 'jpg', 'jpeg'],
+  audio: ['audio', 'podcast', 'voice', 'mp3'],
+}
+
+const LONGTAIL_PATTERN = /\b(how|what|why|when|where|which|can|is|are|best|safe|secure|private|privacy|free|online|no sign ?up|without|alternative|compare|comparison|vs\.?|for)\b/i
+const ACCESS_PATTERN = /\b(free|online|no sign ?up|without|instant)\b/i
+const TRUST_PATTERN = /\b(safe|secure|private|privacy|accurate|citation|citations|source|sources)\b/i
+
+function words(value: string): string[] {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean)
+}
+
+function matchingGroups(value: string, groups: Record<string, string[]>): Set<string> {
+  const normalized = ` ${words(value).join(' ')} `
+  const tokens = new Set(words(value))
+  return new Set(Object.entries(groups)
+    .filter(([, terms]) => terms.some(term => term.includes(' ') ? normalized.includes(` ${term} `) : tokens.has(term)))
+    .map(([group]) => group))
+}
+
+function intersects(a: Set<string>, b: Set<string>): boolean {
+  return Array.from(a).some(value => b.has(value))
+}
+
+function lexicalCurrentPageScore(row: MetricRow, primaryKeyword: string, pageType: string): number {
+  const context = `${primaryKeyword} ${pageType}`
+  const contextTokens = new Set(words(context).filter(token => !GENERIC_TOKENS.has(token)))
+  const keywordTokens = new Set(words(row.keyword).filter(token => !GENERIC_TOKENS.has(token)))
+  const contextTasks = matchingGroups(context, TASK_GROUPS)
+  const keywordTasks = matchingGroups(row.keyword, TASK_GROUPS)
+  const contextObjects = matchingGroups(context, OBJECT_GROUPS)
+  const keywordObjects = matchingGroups(row.keyword, OBJECT_GROUPS)
+  const objectMatch = contextObjects.size > 0 && intersects(contextObjects, keywordObjects)
+  const taskMatch = contextTasks.size > 0 && intersects(contextTasks, keywordTasks)
+  const primary = primaryKeyword.toLowerCase().trim()
+  const exactRelation = Boolean(primary) && (row.keyword.includes(primary) || primary.includes(row.keyword))
+
+  if (contextObjects.size && !objectMatch && !exactRelation) return -1
+  if (contextTasks.size && !taskMatch && !exactRelation) return -1
+
+  let overlap = 0
+  for (const token of contextTokens) if (keywordTokens.has(token)) overlap += 1
+
+  if (!exactRelation && !objectMatch && !taskMatch && overlap === 0) return -1
+  return overlap * 3 + (objectMatch ? 4 : 0) + (taskMatch ? 4 : 0) + (exactRelation ? 6 : 0) + Math.log10(row.volume + 1)
+}
+
+function expandCurrentPageClassification(
+  classification: KeywordClassification,
+  rows: MetricRow[],
+  primaryKeyword: string,
+  pageType: string,
+  minimumPoolSize = 20
+): { classification: KeywordClassification; addedIds: string[] } {
+  const currentIds = new Set(classification.current_page_ids)
+  const candidates = rows
+    .filter(row => row.keyword_id && !currentIds.has(row.keyword_id))
+    .map(row => ({ row, score: lexicalCurrentPageScore(row, primaryKeyword, pageType) }))
+    .filter(candidate => candidate.score >= 0)
+    .sort((a, b) => b.score - a.score || b.row.volume - a.row.volume)
+  const addedIds: string[] = []
+
+  for (const { row } of candidates) {
+    if (currentIds.size >= minimumPoolSize) break
+    currentIds.add(row.keyword_id!)
+    addedIds.push(row.keyword_id!)
+  }
+
+  return {
+    classification: {
+      ...classification,
+      current_page_ids: Array.from(currentIds),
+      out_of_brand_ids: classification.out_of_brand_ids.filter(id => !currentIds.has(id)),
+    },
+    addedIds,
+  }
+}
+
 function validatedIds(value: unknown, availableIds: Set<string>): string[] {
   if (!Array.isArray(value)) return []
   return Array.from(new Set(value.filter((id): id is string => typeof id === 'string' && availableIds.has(id))))
@@ -52,18 +152,24 @@ function applyExactMetrics(
   result: unknown,
   rows: MetricRow[],
   classification: KeywordClassification,
-  lowDemandModifierGuidance: string[]
+  lowDemandModifierGuidance: string[],
+  lexicalFallbackIds: string[],
+  includeArticleIdeas: boolean
 ): unknown {
-  if (!result || typeof result !== 'object') return result
-
   const byId = new Map(rows.filter(row => row.keyword_id).map(row => [row.keyword_id!, row]))
   const byKeyword = new Map(rows.map(row => [normalizeKeyword(row.keyword), row]))
-  const data = result as Record<string, any>
+  const data = result && typeof result === 'object' ? result as Record<string, any> : {}
   const unsupported: Array<Record<string, any>> = []
   const corrections: Array<Record<string, any>> = []
   const boundaryRejections: Array<Record<string, string>> = []
+  const fallbackExpansions: Array<Record<string, string>> = []
   const currentPageIds = new Set(classification.current_page_ids)
   const newPageIds = new Set(classification.new_page_ids)
+
+  for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights', 'excluded_keywords', 'missing_exports', 'new_page_opportunities', 'article_idea_expansions']) {
+    if (!Array.isArray(data[key])) data[key] = []
+  }
+  if (!includeArticleIdeas) data.article_idea_expansions = []
 
   function patchKeywordLike(item: unknown, section: string) {
     if (!item || typeof item !== 'object') return false
@@ -143,9 +249,7 @@ function applyExactMetrics(
     }
   }
   for (const key of ['supporting_keywords', 'longtail_keywords', 'competitor_insights']) {
-    if (Array.isArray(data[key])) {
-      data[key] = data[key].filter((item: unknown) => patchKeywordLike(item, key))
-    }
+    data[key] = data[key].filter((item: unknown) => patchKeywordLike(item, key))
   }
 
   if (Array.isArray(data.new_page_opportunities)) {
@@ -205,8 +309,64 @@ function applyExactMetrics(
     data.new_page_opportunities = data.new_page_opportunities.filter((item: Record<string, any>) => item?.primary_keyword_id)
   }
 
+  const usedIds = new Set<string>([
+    data.primary_keyword?.keyword_id,
+    ...data.supporting_keywords.map((item: Record<string, any>) => item?.keyword_id),
+    ...data.longtail_keywords.map((item: Record<string, any>) => item?.keyword_id),
+  ].filter((id): id is string => typeof id === 'string'))
+  const availableCurrentRows = rows
+    .filter(row => row.keyword_id && currentPageIds.has(row.keyword_id) && !usedIds.has(row.keyword_id))
+    .filter(row => !row.source.toLowerCase().includes('competitor'))
+    .sort((a, b) => b.volume - a.volume)
+
+  function isLongtail(row: MetricRow): boolean {
+    return LONGTAIL_PATTERN.test(row.keyword) || words(row.keyword).length >= 4
+  }
+
+  function fallbackKeyword(row: MetricRow, section: 'supporting_keywords' | 'longtail_keywords'): Record<string, any> {
+    const placement = ACCESS_PATTERN.test(row.keyword)
+      ? 'CTA or value proposition'
+      : TRUST_PATTERN.test(row.keyword) || /\b(how|what|why|is|are|can)\b/i.test(row.keyword)
+        ? 'FAQ or trust section'
+        : isLongtail(row) ? 'Use-case or task-specific section' : 'H2, feature block, or body copy'
+    return {
+      keyword_id: row.keyword_id,
+      keyword: row.keyword,
+      volume: row.volume,
+      kd: row.kd ?? 0,
+      cpc: row.cpc ?? 0,
+      density: row.competition ?? 0,
+      competition: row.competition ?? 0,
+      trend: row.trend ?? '',
+      serp_features: row.serp_features ?? '',
+      source: row.source,
+      source_role: row.source_role,
+      trend_direction: 'Insufficient Data',
+      ...(section === 'supporting_keywords'
+        ? { content_placement: placement, flag: 'Server fallback from validated current-page pool.' }
+        : { content_format: placement, use_case: `Cover the search intent expressed by "${row.keyword}".` }),
+    }
+  }
+
+  function refill(section: 'supporting_keywords' | 'longtail_keywords', preferred: (row: MetricRow) => boolean) {
+    const candidates = [...availableCurrentRows.filter(preferred), ...availableCurrentRows.filter(row => !preferred(row))]
+    for (const row of candidates) {
+      if (data[section].length >= 5) break
+      if (!row.keyword_id || usedIds.has(row.keyword_id)) continue
+      data[section].push(fallbackKeyword(row, section))
+      usedIds.add(row.keyword_id)
+      fallbackExpansions.push({ section, keyword_id: row.keyword_id, keyword: row.keyword })
+    }
+  }
+
+  refill('supporting_keywords', row => !isLongtail(row))
+  refill('longtail_keywords', isLongtail)
+
   data.page_strategy_notes = {
     ...(data.page_strategy_notes && typeof data.page_strategy_notes === 'object' ? data.page_strategy_notes : {}),
+    content_format: data.page_strategy_notes?.content_format ?? '',
+    biggest_opportunity: data.page_strategy_notes?.biggest_opportunity ?? '',
+    primary_risk: data.page_strategy_notes?.primary_risk ?? '',
     low_demand_modifier_guidance: lowDemandModifierGuidance.map(keyword => `${keyword} — Low demand (<30); use only as optional access/trust wording.`),
   }
 
@@ -215,6 +375,8 @@ function applyExactMetrics(
     metric_corrections_applied: corrections,
     keyword_classification: classification,
     boundary_rejections: boundaryRejections,
+    lexical_current_page_expansions: lexicalFallbackIds,
+    section_fallback_expansions: fallbackExpansions,
   }
 
   return data
@@ -311,7 +473,8 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 3000,
+        max_tokens: 5000,
+        temperature: 0.1,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: classificationPrompt(pageType, primaryKeyword, brandScope) },
@@ -340,8 +503,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Keyword classification returned invalid data. Please run the analysis again.' }, { status: 500 })
     }
 
-    const currentPageRows = filtered.filter(row => classification!.current_page_ids.includes(row.keyword_id!))
-    const newPageRows = filtered.filter(row => classification!.new_page_ids.includes(row.keyword_id!))
+    const expandedClassification = expandCurrentPageClassification(classification, filtered, primaryKeyword, pageType)
+    classification = expandedClassification.classification
+    const currentPageRows = filtered.filter(row => classification.current_page_ids.includes(row.keyword_id!))
     const lowDemandModifierGuidance = findLowDemandModifierGuidance([...allRows, ...filtered], new Set(classification.current_page_ids))
     const seeds = seedDiscoverySignals(allRows)
 
@@ -376,6 +540,7 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 8000,
+        temperature: 0.1,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: finalPrompt },
@@ -423,7 +588,14 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
     }
 
     return NextResponse.json({
-      result: applyExactMetrics(result, filtered, classification, lowDemandModifierGuidance),
+      result: applyExactMetrics(
+        result,
+        filtered,
+        classification,
+        lowDemandModifierGuidance,
+        expandedClassification.addedIds,
+        targetAudience.trim().toLowerCase() !== 'all / undefined'
+      ),
       stats: { ...stats, sentToAI: filtered.length },
     })
   } catch (err) {
