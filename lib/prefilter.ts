@@ -15,6 +15,14 @@ export const SOURCE_ROLE_LABELS: Record<SourceRole, string> = {
   custom: 'Custom Keyword List',
 }
 
+const DEDUP_SOURCE_PRIORITY: Record<SourceRole, number> = {
+  broad_match: 3,
+  current_page_gap: 2,
+  page_cluster: 1,
+  custom: 0,
+  auto: 0,
+}
+
 export type KeywordRow = {
   keyword_id?: string
   keyword: string
@@ -243,10 +251,13 @@ export function mergeAndFilter(
   const map = new Map<string, KeywordRow>()
   for (const row of volFiltered) {
     const existing = map.get(row.keyword)
+    const sourcePriority = DEDUP_SOURCE_PRIORITY[row.source_role]
+    const existingSourcePriority = existing ? DEDUP_SOURCE_PRIORITY[existing.source_role] : -1
     if (
       !existing ||
-      row.volume > existing.volume ||
-      (row.volume === existing.volume && existing.kd === undefined && row.kd !== undefined)
+      sourcePriority > existingSourcePriority ||
+      (sourcePriority === existingSourcePriority && row.volume > existing.volume) ||
+      (sourcePriority === existingSourcePriority && row.volume === existing.volume && existing.kd === undefined && row.kd !== undefined)
     ) {
       map.set(row.keyword, row)
     }

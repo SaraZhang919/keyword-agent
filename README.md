@@ -58,8 +58,8 @@ The tool supports **up to 5 keyword file sections** per analysis:
 
 **Pre-filter logic (per combined list):**
 1. Remove keywords with volume < 30
-2. Deduplicate across all sections (keep highest volume)
-3. Cap at 300 keywords sent to AI (sorted by volume desc)
+2. Deduplicate across all sections using source-role priority: Broad Match / All Keywords &gt; Current Page / Gap Export &gt; Page Cluster / Pages Export. Within the same role, keep the highest volume (then the row with KD when only one has it).
+3. Cap at 500 keywords sent to AI while preserving source-role and longtail coverage, then sort by volume
 
 ---
 

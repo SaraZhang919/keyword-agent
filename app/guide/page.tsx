@@ -357,7 +357,7 @@ export default function GuidePage() {
               <li>Parse all valid CSV/XLSX sheets and pasted rows under their section labels and source roles.</li>
               <li>Normalize column aliases: KD/KD%/Keyword Difficulty/Difficulty, Volume/Search Volume/Avg. Monthly Searches, and Com./Competitive Density.</li>
               <li>Remove ordinary keywords with volume below 30. Tight access/trust modifiers below 30 are retained only as non-target wording guidance when their stripped base exactly matches a measured current-page term.</li>
-              <li>Deduplicate by normalized keyword and keep the highest-volume version.</li>
+              <li>Deduplicate by normalized keyword using source-role precedence: broad_match (All Keywords) &gt; current_page_gap (Gap Export) &gt; page_cluster (Pages Export). Only use higher volume and then KD completeness as tie-breakers within the same source priority.</li>
               <li>Assign stable keyword_id values after filtering and sorting.</li>
               <li>Select up to 500 rows with volume-first source-role coverage plus question, access, trust, comparison, and specific multi-word phrase protection.</li>
               <li>Parse Seed keyword as a non-metric discovery signal. It can strengthen a corroborated future cluster or become a Missing Export request, never a keyword target.</li>

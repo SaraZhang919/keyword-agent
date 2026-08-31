@@ -121,7 +121,7 @@ export default function HelpPage() {
           <Grid>
             <Item title="1. Parse">读取所有有效 sheet，识别 Keyword、Volume 及可选 KD、CPC、Intent、Trend、SERP 等列。</Item>
             <Item title="2. Filter">普通关键词 Volume&lt;30 会被过滤；少量紧密的 access/trust modifier 只可作为措辞提示。</Item>
-            <Item title="3. Deduplicate">相同关键词去重，保留 Volume 更高或指标更完整的行，并保留该行的 Source File。</Item>
+            <Item title="3. Deduplicate">相同关键词去重时，按 Source Role 采用 Broad Match Keywords（All Keywords）→ Current Page / Competitor Gap（Gap Export）→ Page Cluster / Page Opportunities（Pages Export）的数据。只有 Source Role 优先级相同时，才保留 Volume 更高或指标更完整的行；Source File 显示最终采用的实际文件。</Item>
             <Item title="4. Select up to 500">按 Volume、Source Role 和 longtail/question 信号选择最多 500 行发送给模型。</Item>
             <Item title="5. Stage 1">将 ID 分为 Current Page、New Page 和 Out of Brand；明确的反向转换不会进入 Current Page。</Item>
             <Item title="6. Stage 2 + Audit">生成策略后，服务器重新匹配 ID、恢复精确指标、移除越界建议并稳定各 Section。</Item>
@@ -166,6 +166,7 @@ export default function HelpPage() {
             <Item title="为什么只有部分 case 有 Competitor Insights？">只有上传数据包含可识别的 competitor/brand demand 时才有内容。空白不代表分析失败。</Item>
             <Item title="Missing Exports 是 Agent 发明的关键词吗？">不是。它是“还缺哪些数据才能验证”的研究方向，不带可信的 Volume/KD。补充导出后重新运行，或在不相关时忽略。</Item>
             <Item title="Primary ID 对应哪个文件？">ID 本身只是本次分析的内部标识。请同时查看 Source Section 和 Source File；它们指出最终指标来自哪组数据和哪个实际文件。</Item>
+            <Item title="同一个关键词在多个文件中的指标不同，采用哪个？">系统根据你选择或自动识别的 Source Role 决定：All Keywords / Broad Match 优先，其次是 Gap Export，最后是 Pages Export。同一优先级内才比较 Volume 和指标完整度，因此请确保每个文件的 Source Role 选择正确。</Item>
             <Item title="为什么某些原始词没有出现在报告？">它可能被 Volume 过滤、去重、500 行预选、相关性分类或策略选择排除。Excluded Keywords 只列有代表性的原因，不列全部未使用词。</Item>
           </Grid>
         </Section>
