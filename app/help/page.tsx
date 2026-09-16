@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import KeywordUpdates from '../components/KeywordUpdates'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
@@ -94,13 +95,15 @@ export default function HelpPage() {
           New Page Opportunities 和 Article Idea Expansions 的用途是激发新页面、内容和产品方向。它们没有完成全面的 SERP、竞争、市场需求、产品可行性、事实和品牌评审。任何建议在进入 roadmap、建页或发布前，都必须由人工进一步研究、判断和审核。
         </div>
 
+        <KeywordUpdates />
+
         <Section title="五分钟使用流程">
           <ol style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-dim)', lineHeight: 1.9, fontSize: '12px' }}>
             <li>选择 Page Type，确保它与准备创建或优化的 URL 类型一致。</li>
             <li>输入 Primary Keyword。它用于描述页面任务和方向，是候选 seed，不保证成为最终推荐词。</li>
             <li>只有需要 audience-specific 文章创意时才选择具体 Target Audience；选择 All / Undefined 会跳过 Article Idea Expansions。</li>
             <li>上传 CSV/XLSX 或粘贴数据，给每组数据填写清晰的 Section Label，并选择正确 Source Role。</li>
-            <li>运行后先看 Primary Keyword 和 Page Strategy Notes，再看 Supporting/Longtail，最后评估 New Page、Competitor 和 Missing Exports。</li>
+            <li>运行后先检查 Source coverage 中 Broad／Gap 的实际覆盖和截断提醒，再看 Primary Keyword 和 Page Strategy Notes，再看 Supporting/Longtail，最后评估 New Page、Competitor 和 Missing Exports。</li>
           </ol>
         </Section>
 
@@ -122,7 +125,7 @@ export default function HelpPage() {
             <Item title="1. Parse">读取所有有效 sheet，识别 Keyword、Volume 及可选 KD、CPC、Intent、Trend、SERP 等列。</Item>
             <Item title="2. Filter">普通关键词 Volume&lt;30 会被过滤；少量紧密的 access/trust modifier 只可作为措辞提示。</Item>
             <Item title="3. Deduplicate">相同关键词去重时，按 Source Role 采用 Broad Match Keywords（All Keywords）→ Current Page / Competitor Gap（Gap Export）→ Page Cluster / Page Opportunities（Pages Export）的数据。只有 Source Role 优先级相同时，才保留 Volume 更高或指标更完整的行；Source File 显示最终采用的实际文件。</Item>
-            <Item title="4. Select up to 500">按 Volume、Source Role 和 longtail/question 信号选择最多 500 行发送给模型。</Item>
+            <Item title="4. 原版预选 + Gap 补齐">先按原版规则共选最多 500 词，再单独补齐有效竞品 Gap 词（Gap 合计最多 500 词）。总输入可能超过 500；Broad 过大或太杂时建议手动删除无关词。</Item>
             <Item title="5. Stage 1">将 ID 分为 Current Page、New Page 和 Out of Brand；明确的反向转换不会进入 Current Page。</Item>
             <Item title="6. Stage 2 + Audit">生成策略后，服务器重新匹配 ID、恢复精确指标、移除越界建议并稳定各 Section。</Item>
           </Grid>
@@ -167,7 +170,7 @@ export default function HelpPage() {
             <Item title="Missing Exports 是 Agent 发明的关键词吗？">不是。它是“还缺哪些数据才能验证”的研究方向，不带可信的 Volume/KD。补充导出后重新运行，或在不相关时忽略。</Item>
             <Item title="Primary ID 对应哪个文件？">ID 本身只是本次分析的内部标识。请同时查看 Source Section 和 Source File；它们指出最终指标来自哪组数据和哪个实际文件。</Item>
             <Item title="同一个关键词在多个文件中的指标不同，采用哪个？">系统根据你选择或自动识别的 Source Role 决定：All Keywords / Broad Match 优先，其次是 Gap Export，最后是 Pages Export。同一优先级内才比较 Volume 和指标完整度，因此请确保每个文件的 Source Role 选择正确。</Item>
-            <Item title="为什么某些原始词没有出现在报告？">它可能被 Volume 过滤、去重、500 行预选、相关性分类或策略选择排除。Excluded Keywords 只列有代表性的原因，不列全部未使用词。</Item>
+            <Item title="为什么某些原始词没有出现在报告？">它可能被 Volume 过滤、去重、原版共用 500 词预选、相关性分类或策略选择排除。有效 Gap 词会在预选后单独补齐，但仍不保证被推荐。Excluded Keywords 只列有代表性的原因，不列全部未使用词。</Item>
           </Grid>
         </Section>
 

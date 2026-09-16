@@ -1,111 +1,53 @@
 # Keyword Strategy Agent
 
-Internal SEO keyword strategy tool for the content team.
+内部 SEO 关键词策略工具。中文用户指南位于 /help，管理员逻辑说明位于 /guide。
 
----
+## 本次确认的最小更新
 
-## What It Does
+- 保留原版结果布局、搜索量 ≥30 过滤、标准化精确去重、指标优先级和两阶段分析。
+- 原版最多 500 个预选名额仍由所有来源共用。预选后补齐所有有效唯一 Competitor Gap 词，不挤占原有入选词。
+- 所有 Gap 分区合计最多 500 个有效唯一词；超出时在 AI 请求前返回明确错误。默认总输入最多 1,000 词，重复词只算一次。
+- 保留去重前的竞品来源、网址和正数排名证据；支持 Intents 与 Competition Density 列。两个 AI 阶段都会收到这些证据和 Gap 审查说明，包括使用已保存自定义策略提示词时。
+- 上传区域提醒 Broad 大词表的影响，结果前显示 Broad／Gap 来源覆盖和截断提醒。
 
-1. Team uploads **1–5 keyword CSVs**, each with a custom label (e.g. "Topic Keywords", "Competitor A", "Ahrefs Export")
-2. Selects page type + enters primary keyword
-3. Agent pre-filters every file (removes vol < 30, deduplicates across all files, merges)
-4. Sends merged filtered list to Claude API (labelled by source section)
-5. Returns: primary keyword validation, supporting keywords, longtail keywords, competitor insights, page strategy notes
+## 如何准备 Broad 关键词
 
----
+词表很大或包含大量无关词，会占用原版预选名额，也可能增加语义噪声，影响结果。建议先手动删除与页面功能、转换方向、用户任务无关的词，保留相关近义词、问句、长尾变体。尽量控制在 500 个有效唯一 Broad 词以内。
 
-## Setup
+“有效唯一”指搜索量 ≥30 且跨文件标准化去重后的词，不是上传行数。原版 500 个名额与 Cluster、Custom 和 Gap 共用，因此 Broad 不足 500 也可能被截断；请检查 Source coverage。Gap 会单独补齐，但送入 AI 不代表一定进入最终推荐。相关品牌需求可能进入 Competitor Insights，不必成为当前页主词。
 
-### 1. Clone and install
+## 模型与流程
 
-```bash
-git clone <your-repo>
-cd keyword-strategy-agent
+当前使用 OpenAI gpt-4.1，经 /v1/chat/completions 完成两阶段请求：关键词 ID 分类，再生成策略；最后按输入数据校验 ID、指标及章节边界。不是 Claude，也没有 GPT-4o 回退。补齐 Gap 后可能增加输入 token 和耗时。
+
+支持 CSV、XLSX 多工作表及粘贴行，最多 5 个来源分区。必需 Keyword 和 Volume，支持 KD、Intent/Intents、CPC、Competition Density、Trend、SERP Features 及竞品网址排名列。请明确选择来源角色，尤其是 Current Page / Competitor Gap。
+
+## 本地开发
+
+安装依赖后，在未提交的 .env.local 中配置 OPENAI_API_KEY、TOOL_PASSWORD、ADMIN_PASSWORD；如需持久保存管理员提示词及品牌范围，配置 KV_REST_API_URL 和 KV_REST_API_TOKEN（Upstash Redis）。不要提交密钥。
+
+~~~powershell
 npm install
-```
-
-### 2. Configure environment variables
-
-Copy `.env.local.example` to `.env.local` and fill in:
-
-```
-TOOL_PASSWORD=        # Team access password
-ADMIN_PASSWORD=       # Admin panel password
-ANTHROPIC_API_KEY=    # Your Anthropic API key (sk-ant-...)
-```
-
-> If `ANTHROPIC_API_KEY` is set, Claude is used. If only `OPENAI_API_KEY` is set, GPT-4o is used as fallback.
-
-### 3. Run locally
-
-```bash
 npm run dev
-```
+~~~
 
-Visit `http://localhost:3000`
+访问 http://localhost:3000。没有 Redis 时生成使用默认提示词；管理员设置的持久保存需要 Redis。实际请求入口保持原版行为。
 
----
+## 验证
 
-## Multi-Section File Upload
+~~~powershell
+node --test tests/keyword-gap.test.cjs
+npm run build
+~~~
 
-The tool supports **up to 5 keyword file sections** per analysis:
+测试使用模拟 OpenAI 响应，不消耗 token，检查选择边界、Gap 补齐与去重证据、两个 AI 阶段及超限输入拦截。
 
-- Each section has a **custom label** (editable inline — e.g. "Topic", "Competitor A", "Ahrefs")
-- Start with 3 default sections; add more with the **+ Add Section** button
-- Sections without a file are ignored — only upload what you have
-- All files are merged, deduplicated, and filtered together before being sent to AI
-- The AI sees which section each keyword came from, enabling competitor-specific insights
+## Git 提交范围与上线
 
-**Pre-filter logic (per combined list):**
-1. Remove keywords with volume < 30
-2. Deduplicate across all sections using source-role priority: Broad Match / All Keywords &gt; Current Page / Gap Export &gt; Page Cluster / Pages Export. Within the same role, keep the highest volume (then the row with KD when only one has it).
-3. Cap at 500 keywords sent to AI while preserving source-role and longtail coverage, then sort by volume
+本次提交仅整理已验证的最小关键词逻辑、来源覆盖 UI、中文说明及回归测试。保留已有登录和部署机制。
 
----
+独立本地实验中的运行次数许可、5 美元累计预估费用停止条件、本机文件历史、token 记录及本地下载页面不属于本次移植；不能把实验目录直接当作生产应用部署。当前 Git 应用并未因此获得生产持久历史和 token 计费功能。
 
-## Deploy to Vercel
+先推送功能分支并查看预览，再合并上线。若 Git 主分支连接了自动部署，直接推送主分支可能触发发布。不要提交 .env.local、实验授权文件、原始输入数据或运行记录。
 
-### Option A: Via GitHub (recommended)
-
-1. Push repo to GitHub
-2. Go to [vercel.com](https://vercel.com) → New Project → Import
-3. Add environment variables in Vercel Dashboard → Settings → Environment Variables
-4. Deploy
-
-### Option B: Via CLI
-
-```bash
-npm i -g vercel
-vercel
-```
-
----
-
-## Enable Prompt Persistence (Vercel KV)
-
-Without KV, admin prompt edits work but don't survive redeployments.
-
-1. Vercel Dashboard → Storage → Create Database → KV
-2. Connect to your project (env vars added automatically)
-3. Redeploy
-
----
-
-## Prompt Management
-
-- Visit `/admin` on your deployed URL
-- Edit the system prompt in the browser
-- Use `{{PAGE_TYPE}}` and `{{PRIMARY_KEYWORD}}` as placeholders (required)
-- Changes apply immediately to all new generations
-
----
-
-## CSV Format
-
-Expects SEMrush, Ahrefs, or similar exports. Required columns:
-- `Keyword` (or `Keywords`, `Query`, `Search Term`)
-- `Volume` (or `Search Volume`, `Avg. Monthly Searches`)
-
-Optional:
-- `KD` / `Keyword Difficulty`
-- `CPC` / `CPC (USD)`
+原有 lib/markdownReport.ts 有独立未提交修改；本次不改写、不纳入提交。该修改引用缺失的 strategyTypes，可能导致当前混合工作区构建失败。可提交本次明确列出的文件后，在干净工作树中构建已提交版本；不要为了通过构建丢弃原有修改。

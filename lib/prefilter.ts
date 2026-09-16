@@ -24,6 +24,8 @@ const DEDUP_SOURCE_PRIORITY: Record<SourceRole, number> = {
 }
 
 export type KeywordRow = {
+  source_roles?: SourceRole[]
+  gap_evidence?: { source: string; file?: string; intent?: string; rankings: { url: string; position: number }[] }[]
   keyword_id?: string
   keyword: string
   volume: number
@@ -72,7 +74,7 @@ function detectSourceRole(headers: string[], requestedRole: SourceRole): SourceR
   const hasDomainCol = lower.some(h => /\.[a-z]{2,}(\/|$)?/.test(h) || h.includes('www.'))
 
   if (has('page') && has('topic') && has('page type')) return 'page_cluster'
-  if ((has('kd%') || has('position') || has('previous position')) && hasDomainCol) return 'current_page_gap'
+  if (hasDomainCol) return 'current_page_gap'
   if (has('intent') && has('trend') && (has('keyword difficulty') || has('kd')) && has('serp features')) return 'broad_match'
   return 'custom'
 }
@@ -183,8 +185,8 @@ export function parseRows(
   const sourceRole = detectSourceRole(headers, canonicalRole(requestedRole))
   const kdCol = findCol(headers, ['kd', 'kd%', 'keyword difficulty', 'difficulty'])
   const cpcCol = findCol(headers, ['cpc', 'cpc (usd)', 'cost per click'])
-  const competitionCol = findCol(headers, ['com.', 'competitive density', 'competition', 'density'])
-  const intentCol = findCol(headers, ['intent'])
+  const competitionCol = findCol(headers, ['com.', 'competitive density', 'competition', 'density', 'competition density'])
+  const intentCol = findCol(headers, ['intent', 'intents'])
   const trendCol = findCol(headers, ['trend'])
   const serpCol = findCol(headers, ['serp features', 'serp'])
   const pageCol = findCol(headers, ['page'])
@@ -214,6 +216,15 @@ export function parseRows(
       source_file: sourceFile,
       source_role: sourceRole,
       source,
+      gap_evidence: sourceRole === 'current_page_gap' ? [{ source, file: sourceFile,
+        intent: intentCol ? String(row[intentCol] ?? '').trim() : undefined,
+        rankings: Object.entries(row).flatMap(([header, value]) => {
+          if (/\(pages\)$/i.test(header)) return []
+          const url = /^https?:\/\//i.test(header) ? header : /^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(header) ? 'https://' + header : ''
+          const position = Number(String(value).trim())
+          return url && Number.isInteger(position) && position > 0 ? [{ url, position }] : []
+        }),
+      }] : undefined,
     })
   }
 
@@ -228,6 +239,13 @@ export type FilterStats = {
   brandTerms: number
   bySource: Record<string, number>
   bySourceRole: Record<string, number>
+  baseSelected: number
+  gapEligible: number
+  gapIncluded: number
+  gapAdded: number
+  broadEligible: number
+  broadIncluded: number
+  warnings: string[]
 }
 
 export function mergeAndFilter(
@@ -282,9 +300,26 @@ export function mergeAndFilter(
     selected.set(row.keyword, row)
   }
 
+  // Keep the original selection intact. Gap rows are an additional union,
+  // including rows whose canonical metrics came from the broad source.
+  const baseSelected = selected.size
+  const gapKeys = new Set(volFiltered.filter(row => row.source_role === 'current_page_gap').map(row => row.keyword))
+  if (gapKeys.size > 500) throw new Error(`Competitor gap contains ${gapKeys.size} eligible unique keywords. Keep at most 500 across gap sections; none were sent to AI.`)
+  for (const keyword of gapKeys) selected.set(keyword, map.get(keyword)!)
+  const broadKeys = new Set(volFiltered.filter(row => row.source_role === 'broad_match').map(row => row.keyword))
+  const broadIncluded = [...broadKeys].filter(keyword => selected.has(keyword)).length
+  const warnings: string[] = []
+  if (broadKeys.size > 500) warnings.push(`Broad list: ${broadIncluded} of ${broadKeys.size} eligible unique keywords selected. Large lists may omit relevant terms. Remove unrelated broad keywords manually and aim for at most 500 eligible unique keywords (volume ≥30 after deduplication), then check coverage again.`)
+  else if (broadIncluded < broadKeys.size) warnings.push(`Broad list: ${broadIncluded} of ${broadKeys.size} eligible unique keywords selected. Your broad list is already below 500, but cluster/custom sources compete for the original shared 500 slots. Narrow unrelated rows in those sources and check coverage again. Cleaning the broad list alone does not guarantee full coverage.`)
+  const evidence = new Map<string, KeywordRow[]>()
+  for (const row of volFiltered) evidence.set(row.keyword, [...(evidence.get(row.keyword) || []), row])
+
   const filtered = Array.from(selected.values())
     .sort((a, b) => b.volume - a.volume)
-    .map((row, index) => ({ ...row, keyword_id: `kw_${String(index + 1).padStart(4, '0')}` }))
+    .map((row, index) => ({ ...row, keyword_id: `kw_${String(index + 1).padStart(4, '0')}`,
+      source_roles: [...new Set(evidence.get(row.keyword)!.map(r => r.source_role))],
+      gap_evidence: evidence.get(row.keyword)!.filter(r => r.source_role === 'current_page_gap').flatMap(r => r.gap_evidence || [{source:r.source,file:r.source_file,intent:r.intent,rankings:[]}]),
+    }))
 
   const brandTerms = filtered.filter(row => row.source.toLowerCase().includes('competitor')).length
 
@@ -298,6 +333,8 @@ export function mergeAndFilter(
       brandTerms,
       bySource,
       bySourceRole,
+      baseSelected, gapEligible: gapKeys.size, gapIncluded: gapKeys.size,
+      gapAdded: selected.size - baseSelected, broadEligible: broadKeys.size, broadIncluded, warnings,
     },
   }
 }
@@ -333,7 +370,7 @@ export function seedDiscoverySignals(rows: KeywordRow[]): string[] {
 }
 
 export function formatForAI(rows: KeywordRow[]): string {
-  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features'
+  const header = 'keyword_id\tsource_role\tsource\tkeyword\tvolume\tkd\tcpc\tcompetition\tintent\ttrend\tpage\ttopic\tpage_type\tserp_features\tsource_roles\tgap_evidence'
   const body = rows
     .map(row => [
       row.keyword_id ?? '',
@@ -350,7 +387,9 @@ export function formatForAI(rows: KeywordRow[]): string {
       row.topic ?? '',
       row.page_type ?? '',
       row.serp_features ?? '',
-    ].join('\t'))
+      (row.source_roles || [row.source_role]).join(','),
+      row.gap_evidence?.length ? JSON.stringify(row.gap_evidence) : '',
+    ].map(value => String(value).replace(/[\t\r\n]/g, ' ')).join('\t'))
     .join('\n')
   return `${header}\n${body}`
 }

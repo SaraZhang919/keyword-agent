@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter, parseRows, pasteToRows, seedDiscoverySignals, type SourceRole } from '@/lib/prefilter'
-import { classificationPrompt, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
+import { classificationPrompt, GAP_REVIEW_NOTE, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
 import { hasOppositeConversionDirection } from '@/lib/conversionDirection'
 
 function extractJsonObject(text: string): string | null {
@@ -466,7 +466,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No keywords found in uploaded files or pasted rows' }, { status: 400 })
     }
 
-    const { filtered, stats } = mergeAndFilter(allRows)
+    let selection: ReturnType<typeof mergeAndFilter>
+    try { selection = mergeAndFilter(allRows) }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid keyword input' }, { status: 400 }) }
+    const { filtered, stats } = selection
     if (filtered.length === 0) {
       return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
@@ -548,6 +551,7 @@ export async function POST(request: NextRequest) {
       .replace('{{TARGET_AUDIENCE}}', targetAudience)
       .replace('{{BRAND_SCOPE}}', brandScope)}
 
+${GAP_REVIEW_NOTE}
 CLASSIFICATION POOLS (absolute rules):
 CURRENT_PAGE_KEYWORD_IDS: ${classification.current_page_ids.join(', ')}
 NEW_PAGE_KEYWORD_IDS: ${classification.new_page_ids.join(', ')}

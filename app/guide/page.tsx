@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import KeywordUpdates from '../components/KeywordUpdates'
 import { useRouter } from 'next/navigation'
 
 type PromptResponse = {
@@ -318,6 +319,8 @@ export default function GuidePage() {
             </p>
           </div>
 
+          <KeywordUpdates />
+
           <Card title="What This Tool Does">
             <p style={{ color: 'var(--text-dim)', margin: 0 }}>
               The tool turns keyword exports or pasted keyword rows into a page-level SEO strategy. It validates the
@@ -346,7 +349,7 @@ export default function GuidePage() {
               <p style={{ margin: '6px 0 0', color: 'var(--text-dim)' }}>
                 Each upload/paste section has a role: Broad Match Keywords, Current Page / Competitor Gap,
                 Page Cluster / Page Opportunities, Custom Keyword List, or Auto-detect.
-                Auto-detect uses headers like Page/Topic/Page type for page clusters, competitor domain columns plus KD% for gap data,
+                Auto-detect uses headers like Page/Topic/Page type for page clusters, competitor domain columns for gap data,
                 and Intent/Trend/Keyword Difficulty/SERP Features for broad-match exports.
               </p>
             </div>
@@ -359,7 +362,7 @@ export default function GuidePage() {
               <li>Remove ordinary keywords with volume below 30. Tight access/trust modifiers below 30 are retained only as non-target wording guidance when their stripped base exactly matches a measured current-page term.</li>
               <li>Deduplicate by normalized keyword using source-role precedence: broad_match (All Keywords) &gt; current_page_gap (Gap Export) &gt; page_cluster (Pages Export). Only use higher volume and then KD completeness as tie-breakers within the same source priority.</li>
               <li>Assign stable keyword_id values after filtering and sorting.</li>
-              <li>Select up to 500 rows with volume-first source-role coverage plus question, access, trust, comparison, and specific multi-word phrase protection.</li>
+              <li>保留原版共用 500 词的搜索量／长尾预选，再补齐最多 500 个有效唯一竞品 Gap 词；保留来源、网址和正数排名证据。Broad 过大或太杂时先手动删除无关词，再检查来源覆盖。</li>
               <li>Parse Seed keyword as a non-metric discovery signal. It can strengthen a corroborated future cluster or become a Missing Export request, never a keyword target.</li>
             </ol>
           </Card>

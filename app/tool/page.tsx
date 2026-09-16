@@ -129,6 +129,11 @@ interface Stats {
   afterVolumeFilter: number
   afterDedup: number
   sentToAI: number
+  broadEligible?: number
+  broadIncluded?: number
+  gapEligible?: number
+  gapIncluded?: number
+  warnings?: string[]
   bySource?: Record<string, number>
   bySourceRole?: Record<string, number>
 }
@@ -745,6 +750,13 @@ export default function ToolPage() {
               </div>
             )}
 
+            {stats && <section aria-label="Source coverage" style={{padding:16,marginBottom:16,border:'1px solid var(--border)',borderRadius:6}}>
+              <strong>Source coverage · 来源覆盖</strong>
+              <p>Broad：{stats.broadIncluded ?? '—'} / {stats.broadEligible ?? '—'}；Competitor Gap：{stats.gapIncluded ?? '—'} / {stats.gapEligible ?? '—'}（送入 AI / 有效唯一词）。</p>
+              {stats.warnings?.map(warning => <p key={warning} style={{color:'var(--warn)'}}>{warning}</p>)}
+              <p>送入 AI 不代表一定进入最终推荐。Broad 词表过大或包含大量无关词，可能影响相关词覆盖和结果；建议手动删除无关词，再重新分析。</p>
+            </section>}
+
             {/* Actions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
               <button onClick={resetForm} style={{
@@ -1081,7 +1093,7 @@ export default function ToolPage() {
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
                 Upload CSV/XLSX with Keyword + Volume columns, or paste rows as keyword [tab] volume [tab] KD.
                 Choose a source role so the AI uses broad match, current-page gap, and page-cluster data for the right decisions.
-                Pre-filter: parses all workbook sheets, removes vol &lt; 30, deduplicates, preserves longtail signals, caps at 500 sent to AI.
+                预处理：读取所有工作表，过滤搜索量低于 30 的词并去重。保留原版共用的 500 个预选名额，再单独补齐有效竞品 Gap 词（最多 500 个）。Broad 词表过大或太杂可能影响结果，建议手动删除无关词，尽量控制在 500 个有效唯一词以内；因名额与其他来源共用，仍需检查来源覆盖。
               </p>
             </div>
 
