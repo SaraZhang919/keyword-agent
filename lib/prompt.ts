@@ -28,10 +28,11 @@ Submitted page type: ${pageType}
 Submitted primary keyword: ${primaryKeyword}
 Brand Strategy Scope for future pages only: ${brandScope}
 
-Classify the provided keyword TSV into these arrays of exact keyword IDs:
-- current_page_ids: keyword text matches the submitted page's core object, user task, or a close same-outcome modifier that can support an H2, feature block, CTA, use-case block, trust section, or FAQ. These IDs may be used for primary, supporting, and longtail selection.
-- new_page_ids: keyword text represents a distinct user job that fits the Brand Strategy Scope and has potential for a separate product, feature, online tool, blog, GEO, comparison, use-case, docs, or resource page. This may overlap current_page_ids only when both uses are genuinely valid.
-- out_of_brand_ids: keyword text does not fit the submitted page or the Brand Strategy Scope.
+For EVERY exact keyword ID in the TSV, return one decision in the classifications object:
+- current_page: keyword text matches the submitted page's core object, user task, or a close same-outcome modifier that can support an H2, feature block, CTA, use-case block, trust section, or FAQ. These IDs may be used for primary, supporting, and longtail selection.
+- new_page: keyword text represents a distinct user job that fits the Brand Strategy Scope and has potential for a separate product, feature, online tool, blog, GEO, comparison, use-case, docs, or resource page.
+- current_and_new: both current_page and new_page are genuinely valid for this keyword.
+- out_of_brand: keyword text does not fit the submitted page or the Brand Strategy Scope.
 
 Rules:
 - Judge current-page fit from keyword text, page type, and primary keyword. Do not use page, topic, page_type, source label, volume, or KD to rescue a clearly different task.
@@ -41,12 +42,12 @@ Rules:
 - Use page/topic/page_type only to understand clusters for future-page decisions.
 - A broad or generic phrase without the submitted page's object is not current-page fit when it represents a broader product category.
 - Conversion direction is part of the page job. If the submitted keyword clearly expresses X-to-Y, do not classify Y-to-X as current-page fit.
-- An ID may appear in both current_page_ids and new_page_ids when it is useful as current-page coverage and also has enough distinct intent for a future standalone page.
+- Use current_and_new when a keyword is useful as current-page coverage and also has enough distinct intent for a future standalone page.
 - Do not invent IDs. Every returned ID must exist in the TSV.
-- Classify EVERY supplied ID into at least one array. An out_of_brand_ids entry must not also appear in an in-scope array. Do not repeat an ID within an array.
-- Return only the three ID arrays, with compact JSON and no explanations or keyword text.
+- Every supplied ID is a required property in the response schema. Assign exactly one decision per ID; do not omit an ID or return ID lists.
+- Return only the classifications object, with compact JSON and no explanations or keyword text.
 
-Return exactly: {"current_page_ids":["kw_0001"],"new_page_ids":["kw_0002"],"out_of_brand_ids":["kw_0003"]}`
+Example shape only (use every actual supplied ID): {"classifications":{"kw_0001":"current_page","kw_0002":"new_page","kw_0003":"out_of_brand"}}`
 }
 
 export const DEFAULT_PROMPT = `

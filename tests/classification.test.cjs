@@ -15,8 +15,11 @@ function load(file) {
   return mod.exports;
 }
 const { readClassification, classificationTokenBudget, classificationResponseFormat } = load('lib/classification.ts');
+const { validate } = req('next/dist/compiled/schema-utils3');
 const ids = new Set(['kw_0001', 'kw_0002']);
 const pools = { current_page_ids: ['kw_0001'], new_page_ids: [], out_of_brand_ids: ['kw_0002'] };
+const decisions = { classifications: { kw_0001: 'current_page', kw_0002: 'out_of_brand' } };
+const allCurrent = suppliedIds => ({ classifications: Object.fromEntries(suppliedIds.map(id => [id, 'current_page'])) });
 const envelope = (value, finish_reason = 'stop', extra = {}) => ({
   choices: [{ finish_reason, message: { content: typeof value === 'string' ? value : JSON.stringify(value), ...extra } }],
 });
@@ -26,31 +29,69 @@ test('budget grows with admitted rows, including the 1200-row broad/gap union', 
   assert.equal(classificationTokenBudget(500), 11024);
   assert.equal(classificationTokenBudget(1200), 25024);
   assert.equal(classificationTokenBudget(10000), 32768);
-  assert.equal(classificationResponseFormat.type, 'json_schema');
-  assert.equal(classificationResponseFormat.json_schema.strict, true);
-  assert.deepEqual(classificationResponseFormat.json_schema.schema.required, Object.keys(pools));
-  assert.equal(classificationResponseFormat.json_schema.schema.additionalProperties, false);
+  const format = classificationResponseFormat(ids);
+  assert.equal(format.type, 'json_schema');
+  assert.equal(format.json_schema.strict, true);
+  assert.deepEqual(format.json_schema.schema.required, ['classifications']);
+  assert.deepEqual(format.json_schema.schema.properties.classifications.required, [...ids]);
+  assert.equal(format.json_schema.schema.additionalProperties, false);
+  assert.equal(format.json_schema.schema.properties.classifications.additionalProperties, false);
 });
 
-test('valid classifications preserve current/future overlap and deduplicate within pools', () => {
-  const value = { ...pools, current_page_ids: ['kw_0001', 'kw_0001'], new_page_ids: ['kw_0001'] };
+test('per-ID decisions preserve valid current/future overlap without conflicting exclusions', () => {
+  const value = { classifications: { kw_0001: 'current_and_new', kw_0002: 'out_of_brand' } };
+  validate(classificationResponseFormat(ids).json_schema.schema, value);
   assert.deepEqual(readClassification(envelope(value), ids), { ok: true, classification: { ...pools, new_page_ids: ['kw_0001'] } });
 });
 
+test('all four decisions map to the existing strategy pools', () => {
+  const suppliedIds = new Set(['kw_0001', 'kw_0002', 'kw_0003', 'kw_0004']);
+  const value = { classifications: { kw_0001: 'current_page', kw_0002: 'new_page', kw_0003: 'current_and_new', kw_0004: 'out_of_brand' } };
+  assert.deepEqual(readClassification(envelope(value), suppliedIds), { ok: true, classification: {
+    current_page_ids: ['kw_0001', 'kw_0003'], new_page_ids: ['kw_0002', 'kw_0003'], out_of_brand_ids: ['kw_0004'],
+  } });
+});
+
+test('regression: 849-ID schema rejects an otherwise valid response omitting 81 IDs', () => {
+  const suppliedIds = Array.from({length: 849}, (_, i) => 'kw_' + String(i + 1).padStart(4, '0'));
+  const schema = classificationResponseFormat(new Set(suppliedIds)).json_schema.schema;
+  const complete = allCurrent(suppliedIds);
+  validate(schema, complete);
+  const incomplete = allCurrent(suppliedIds.slice(0, 768));
+  assert.throws(() => validate(schema, incomplete), error => error.errors.some(item => item.keyword === 'required'));
+  const parsed = readClassification(envelope(incomplete), new Set(suppliedIds));
+  assert.equal(parsed.code, 'classification_missing_ids');
+  assert.equal(parsed.missingIdCount, 81);
+  assert.deepEqual(readClassification(envelope(complete), new Set(suppliedIds)).classification.current_page_ids, suppliedIds);
+});
+
+test('1200-ID contract stays within provider limits and prohibits unknown IDs and invalid decisions', () => {
+  const suppliedIds = Array.from({length: 1200}, (_, i) => 'kw_' + String(i + 1).padStart(4, '0'));
+  const schema = classificationResponseFormat(new Set(suppliedIds)).json_schema.schema;
+  const complete = allCurrent(suppliedIds);
+  validate(schema, complete);
+  assert.equal(Object.keys(schema.properties.classifications.properties).length, 1200);
+  assert.equal(schema.properties.classifications.required.length, 1200);
+  assert.equal(schema.$defs.decision.enum.length, 4);
+  assert.ok(Object.values(schema.properties.classifications.properties).every(value => value.$ref === '#/$defs/decision'));
+  assert.throws(() => validate(schema, { classifications: { ...complete.classifications, kw_9999: 'current_page' } }), error => error.errors.some(item => item.keyword === 'additionalProperties'));
+  assert.throws(() => validate(schema, { classifications: { ...complete.classifications, kw_0001: 'invented' } }), error => error.errors.some(item => item.keyword === 'enum'));
+});
+
 for (const [label, response, code] of [
-  ['truncated JSON', envelope('{"current_page_ids":["kw_0001",', 'length'), 'classification_truncated'],
-  ['parseable but truncated output', envelope(pools, 'length'), 'classification_truncated'],
+  ['truncated JSON', envelope('{"classifications":{"kw_0001":', 'length'), 'classification_truncated'],
+  ['parseable but truncated output', envelope(decisions, 'length'), 'classification_truncated'],
   ['refusal', envelope(null, 'stop', { refusal: 'Declined' }), 'classification_refused'],
-  ['content filter', envelope(pools, 'content_filter'), 'classification_incomplete'],
+  ['content filter', envelope(decisions, 'content_filter'), 'classification_incomplete'],
   ['missing choice', {}, 'classification_incomplete'],
   ['malformed JSON', envelope('{broken}'), 'classification_invalid_json'],
-  ['missing pool', envelope({ current_page_ids: ['kw_0001', 'kw_0002'] }), 'classification_invalid_schema'],
-  ['wrong array element', envelope({ ...pools, new_page_ids: [12] }), 'classification_invalid_schema'],
-  ['extra property', envelope({ ...pools, explanation: 'text' }), 'classification_invalid_schema'],
-  ['unknown IDs', envelope({ ...pools, new_page_ids: ['kw_9999'] }), 'classification_unknown_ids'],
-  ['omitted IDs', envelope({ ...pools, out_of_brand_ids: [] }), 'classification_missing_ids'],
-  ['all empty pools', envelope({ current_page_ids: [], new_page_ids: [], out_of_brand_ids: [] }), 'classification_missing_ids'],
-  ['conflicting decisions', envelope({ ...pools, new_page_ids: ['kw_0002'] }), 'classification_conflicting_ids'],
+  ['old array format', envelope(pools), 'classification_invalid_schema'],
+  ['array instead of ID map', envelope({ classifications: ['kw_0001'] }), 'classification_invalid_schema'],
+  ['invalid decision', envelope({ classifications: { kw_0001: 'unknown', kw_0002: 'out_of_brand' } }), 'classification_invalid_schema'],
+  ['extra property', envelope({ ...decisions, explanation: 'text' }), 'classification_invalid_schema'],
+  ['unknown IDs', envelope({ classifications: { ...decisions.classifications, kw_9999: 'new_page' } }), 'classification_unknown_ids'],
+  ['omitted IDs', envelope({ classifications: { kw_0001: 'current_page' } }), 'classification_missing_ids'],
+  ['all empty decisions', envelope({ classifications: {} }), 'classification_missing_ids'],
 ]) test('rejects ' + label + ' with a specific reason', () => {
   const result = readClassification(response, ids);
   assert.equal(result.ok, false);
@@ -58,7 +99,7 @@ for (const [label, response, code] of [
 });
 
 test('all keywords may legitimately be out of brand', () => {
-  assert.equal(readClassification(envelope({ current_page_ids: [], new_page_ids: [], out_of_brand_ids: [...ids] }), ids).ok, true);
+  assert.equal(readClassification(envelope({ classifications: Object.fromEntries([...ids].map(id => [id, 'out_of_brand'])) }), ids).ok, true);
 });
 
 async function withMockProvider(provider, action) {
@@ -90,7 +131,7 @@ test('route stops before strategy and logs metadata when classification hits its
   try {
     await withMockProvider(async () => {
       calls++;
-      return Response.json({ ...envelope('{"current_page_ids":["kw_0001",', 'length'), id: 'test-response', usage: { completion_tokens: 5000 } });
+      return Response.json({ ...envelope('{"classifications":{"kw_0001":', 'length'), id: 'test-response', usage: { completion_tokens: 5000 } });
     }, async () => {
       const response = await load('app/api/generate/route.ts').POST(request(2));
       assert.equal(response.status, 502);
@@ -115,7 +156,10 @@ test('route admits 500 broad + 700 gap rows with a scaled budget and retains bot
       assert.equal(payload.response_format.json_schema.strict, true);
       const suppliedIds = payload.messages[1].content.split('\n').filter(line => /^kw_/.test(line)).map(line => line.split('\t')[0]);
       assert.equal(suppliedIds.length, 1200);
-      return Response.json(envelope({ current_page_ids: suppliedIds, new_page_ids: [], out_of_brand_ids: [] }));
+      const value = allCurrent(suppliedIds);
+      assert.deepEqual(payload.response_format.json_schema.schema.properties.classifications.required, suppliedIds);
+      validate(payload.response_format.json_schema.schema, value);
+      return Response.json(envelope(value));
     }
     assert.equal(payload.response_format.type, 'json_object');
     return Response.json(envelope({ primary_keyword: null }));

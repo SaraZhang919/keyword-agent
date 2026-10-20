@@ -485,7 +485,7 @@ export async function POST(request: NextRequest) {
         model: MODEL,
         max_tokens: classificationTokenBudget(filtered.length),
         temperature: 0.1,
-        response_format: classificationResponseFormat,
+        response_format: classificationResponseFormat(availableIds),
         messages: [
           { role: 'system', content: classificationPrompt(pageType, primaryKeyword, brandScope) },
           { role: 'user', content: `Keyword TSV (${filtered.length} rows):\n\n${keywordList}` },

@@ -4,7 +4,7 @@ export type KeywordClassification = {
   out_of_brand_ids: string[]
 }
 
-const POOLS = ['current_page_ids', 'new_page_ids', 'out_of_brand_ids'] as const
+const DECISIONS = ['current_page', 'new_page', 'current_and_new', 'out_of_brand'] as const
 
 // Allow every admitted ID in one pool, plus current/future-page overlap and
 // JSON whitespace. Raising the ceiling does not force the model to use it.
@@ -12,26 +12,36 @@ export function classificationTokenBudget(rowCount: number): number {
   return Math.min(32768, Math.max(5000, 1024 + rowCount * 20))
 }
 
-export const classificationResponseFormat = {
-  type: 'json_schema',
-  json_schema: {
-    name: 'keyword_classification',
-    strict: true,
-    schema: {
-      type: 'object',
-      properties: Object.fromEntries(POOLS.map(key => [key, {
-        type: 'array', items: { type: 'string' },
-      }])),
-      required: [...POOLS],
-      additionalProperties: false,
+export function classificationResponseFormat(availableIds: Set<string>) {
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'keyword_classification_by_id',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties: {
+          classifications: {
+            type: 'object',
+            properties: Object.fromEntries([...availableIds].map(id => [id, { $ref: '#/$defs/decision' }])),
+            required: [...availableIds],
+            additionalProperties: false,
+          },
+        },
+        required: ['classifications'],
+        additionalProperties: false,
+        // Define this enum once: repeating it for every ID would exceed the
+        // provider's 1000-total-enum-values limit on large uploads.
+        $defs: { decision: { type: 'string', enum: [...DECISIONS] } },
+      },
     },
-  },
+  }
 }
 
 type FailureCode = 'classification_truncated' | 'classification_refused' |
   'classification_incomplete' | 'classification_invalid_json' |
   'classification_invalid_schema' | 'classification_unknown_ids' |
-  'classification_missing_ids' | 'classification_conflicting_ids'
+  'classification_missing_ids'
 
 type ClassificationResult = { ok: true; classification: KeywordClassification } |
   { ok: false; code: FailureCode; error: string; invalidIdCount?: number; missingIdCount?: number }
@@ -56,12 +66,14 @@ export function readClassification(envelope: any, availableIds: Set<string>): Cl
     return { ok: false, code: 'classification_invalid_json', error: 'Keyword classification returned malformed JSON. No strategy was generated. Please try again.' }
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return invalidSchema()
-  const pools = data as Record<string, unknown>
-  if (Object.keys(pools).length !== POOLS.length || POOLS.some(key =>
-    !Array.isArray(pools[key]) || (pools[key] as unknown[]).some(id => typeof id !== 'string')
+  const root = data as Record<string, unknown>
+  if (Object.keys(root).length !== 1 || !root.classifications ||
+    typeof root.classifications !== 'object' || Array.isArray(root.classifications)) return invalidSchema()
+  const decisions = root.classifications as Record<string, unknown>
+  if (Object.values(decisions).some(value =>
+    typeof value !== 'string' || !(DECISIONS as readonly string[]).includes(value)
   )) return invalidSchema()
-  const classification = Object.fromEntries(POOLS.map(key => [key, [...new Set(pools[key] as string[])]])) as KeywordClassification
-  const classified = new Set(POOLS.flatMap(key => classification[key]))
+  const classified = new Set(Object.keys(decisions))
   const invalidIdCount = [...classified].filter(id => !availableIds.has(id)).length
   if (invalidIdCount) return {
     ok: false, code: 'classification_unknown_ids', invalidIdCount,
@@ -72,10 +84,12 @@ export function readClassification(envelope: any, availableIds: Set<string>): Cl
     ok: false, code: 'classification_missing_ids', missingIdCount,
     error: `Keyword classification omitted ${missingIdCount} uploaded keyword IDs. No strategy was generated. Please try again.`,
   }
-  const inScope = new Set([...classification.current_page_ids, ...classification.new_page_ids])
-  if (classification.out_of_brand_ids.some(id => inScope.has(id))) return {
-    ok: false, code: 'classification_conflicting_ids',
-    error: 'Keyword classification returned conflicting in-scope and out-of-brand decisions. No strategy was generated. Please try again.',
+  const classification: KeywordClassification = { current_page_ids: [], new_page_ids: [], out_of_brand_ids: [] }
+  for (const id of availableIds) {
+    const decision = decisions[id]
+    if (decision === 'current_page' || decision === 'current_and_new') classification.current_page_ids.push(id)
+    if (decision === 'new_page' || decision === 'current_and_new') classification.new_page_ids.push(id)
+    if (decision === 'out_of_brand') classification.out_of_brand_ids.push(id)
   }
   return { ok: true, classification }
 }
