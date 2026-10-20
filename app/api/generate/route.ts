@@ -3,6 +3,7 @@ import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter,
 import { classificationPrompt, GAP_REVIEW_NOTE, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL, REASONING_EFFORT } from '@/lib/prompt'
 import { hasOppositeConversionDirection } from '@/lib/conversionDirection'
 import { classificationResponseFormat, classificationTokenBudget, readClassification, type KeywordClassification } from '@/lib/classification'
+import { createGenerationUsage } from '@/lib/generationUsage'
 
 function extractJsonObject(text: string): string | null {
   const cleaned = text.replace(/```json|```/g, '').trim()
@@ -390,6 +391,13 @@ function applyExactMetrics(
 }
 
 export async function POST(request: NextRequest) {
+  const usageTracker = createGenerationUsage(MODEL, REASONING_EFFORT)
+  function respond(body: Record<string, any>, init: { status: number } = { status: 200 }) {
+    const usage = usageTracker.report(init.status >= 400 ? 'failed' : 'completed')
+    // No prompts, keyword data, headers or credentials in usage logs.
+    if (usage.stages.length) console.info('Keyword analysis usage:', JSON.stringify(usage))
+    return NextResponse.json({ ...body, ...(body.result ? { result: { ...body.result, usage } } : {}), usage }, init)
+  }
   try {
     const formData = await request.formData()
     const pageType = formData.get('pageType') as string
@@ -397,11 +405,11 @@ export async function POST(request: NextRequest) {
     const targetAudience = (formData.get('targetAudience') as string) || 'All / Undefined'
 
     if (!pageType || !primaryKeyword) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return respond({ error: 'Missing required fields' }, { status: 400 })
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
+      return respond({ error: 'OPENAI_API_KEY not configured' }, { status: 500 })
     }
 
     // --- Stage 1: Collect all sections (topic_keywords_file, related_keywords_file, etc.) ---
@@ -413,7 +421,7 @@ export async function POST(request: NextRequest) {
     )
 
     if (fileEntries.length === 0 && pasteEntries.length === 0) {
-      return NextResponse.json({ error: 'Please upload a keyword file or paste keyword rows.' }, { status: 400 })
+      return respond({ error: 'Please upload a keyword file or paste keyword rows.' }, { status: 400 })
     }
 
     for (const [key, value] of fileEntries) {
@@ -424,10 +432,10 @@ export async function POST(request: NextRequest) {
       const role = ((formData.get(roleKey) as string) || 'auto') as SourceRole
 
       const { rows: rawRows, error: fileError } = await fileToRows(file)
-      if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
+      if (fileError) return respond({ error: fileError }, { status: 400 })
 
       const { rows, error: parseError } = parseRows(rawRows, label, role, file.name)
-      if (parseError) return NextResponse.json({ error: parseError }, { status: 400 })
+      if (parseError) return respond({ error: parseError }, { status: 400 })
 
       allRows.push(...rows)
     }
@@ -438,20 +446,20 @@ export async function POST(request: NextRequest) {
       const label = (formData.get(labelKey) as string) || key.replace('_paste', '').replace(/_/g, ' ')
       const role = ((formData.get(roleKey) as string) || 'custom') as SourceRole
       const { rows, error: pasteError } = pasteToRows(value as string, label, role)
-      if (pasteError) return NextResponse.json({ error: pasteError }, { status: 400 })
+      if (pasteError) return respond({ error: pasteError }, { status: 400 })
       allRows.push(...rows)
     }
 
     if (allRows.length === 0) {
-      return NextResponse.json({ error: 'No keywords found in uploaded files or pasted rows' }, { status: 400 })
+      return respond({ error: 'No keywords found in uploaded files or pasted rows' }, { status: 400 })
     }
 
     let selection: ReturnType<typeof mergeAndFilter>
     try { selection = mergeAndFilter(allRows) }
-    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid keyword input' }, { status: 400 }) }
+    catch (error) { return respond({ error: error instanceof Error ? error.message : 'Invalid keyword input' }, { status: 400 }) }
     const { filtered, stats } = selection
     if (filtered.length === 0) {
-      return NextResponse.json({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
+      return respond({ error: 'No keywords remain after filtering (all had volume < 30)' }, { status: 400 })
     }
 
     // --- Get persistent prompt and brand scope (from KV if available) ---
@@ -475,7 +483,7 @@ export async function POST(request: NextRequest) {
     const availableIds = new Set(filtered.map(row => row.keyword_id!).filter(Boolean))
 
     // --- Stage 1: classify exact IDs before generating recommendations ---
-    const classificationRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    const classificationRes = await usageTracker.capture('classification', () => fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -491,11 +499,11 @@ export async function POST(request: NextRequest) {
           { role: 'user', content: `Keyword TSV (${filtered.length} rows):\n\n${keywordList}` },
         ],
       }),
-    })
+    }))
 
     if (!classificationRes.ok) {
       console.error('OpenAI classification error:', await classificationRes.text())
-      return NextResponse.json({ error: 'Keyword classification failed. Please run the analysis again.' }, { status: 500 })
+      return respond({ error: 'Keyword classification failed. Please run the analysis again.' }, { status: 500 })
     }
 
     const classificationData = await classificationRes.json()
@@ -514,7 +522,7 @@ export async function POST(request: NextRequest) {
         invalidIdCount: parsedClassification.invalidIdCount,
         missingIdCount: parsedClassification.missingIdCount,
       })
-      return NextResponse.json({ error: parsedClassification.error, code: parsedClassification.code }, { status: 502 })
+      return respond({ error: parsedClassification.error, code: parsedClassification.code }, { status: 502 })
     }
 
     let classification = parsedClassification.classification
@@ -526,7 +534,7 @@ export async function POST(request: NextRequest) {
     const seeds = seedDiscoverySignals(allRows)
 
     if (currentPageRows.length === 0) {
-      return NextResponse.json({ error: 'No uploaded keywords matched the submitted current page. Check the primary keyword or upload a closer broad-match export.' }, { status: 400 })
+      return respond({ error: 'No uploaded keywords matched the submitted current page. Check the primary keyword or upload a closer broad-match export.' }, { status: 400 })
     }
 
     // --- Stage 2: generate strategy from separated, validated pools ---
@@ -549,7 +557,7 @@ For new_page_opportunities, use only NEW_PAGE_KEYWORD_IDS and the Brand Strategy
 When the submitted keyword expresses a source-to-target conversion, preserve that direction. Never replace X-to-Y with Y-to-X.
 If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in missing_exports only.`
 
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    const openaiRes = await usageTracker.capture('strategy', () => fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -568,12 +576,12 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
           },
         ],
       }),
-    })
+    }))
 
     if (!openaiRes.ok) {
       const err = await openaiRes.text()
       console.error('OpenAI API error:', err)
-      return NextResponse.json({ error: 'OpenAI API call failed' }, { status: 500 })
+      return respond({ error: 'OpenAI API call failed' }, { status: 500 })
     }
 
     const openaiData = await openaiRes.json()
@@ -586,7 +594,7 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
         finishReason,
         preview: rawText.slice(0, 500),
       })
-      return NextResponse.json({
+      return respond({
         error: 'AI response was incomplete. Try a smaller upload or run again.',
       }, { status: 500 })
     }
@@ -600,12 +608,12 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
         finishReason,
         preview: rawText.slice(0, 500),
       })
-      return NextResponse.json({
+      return respond({
         error: 'AI returned invalid JSON. Please run the analysis again.',
       }, { status: 500 })
     }
 
-    return NextResponse.json({
+    return respond({
       result: applyExactMetrics(
         result,
         filtered,
@@ -619,6 +627,6 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
     })
   } catch (err) {
     console.error('Generate error:', err)
-    return NextResponse.json({ error: 'Unexpected error. Check server logs.' }, { status: 500 })
+    return respond({ error: 'Unexpected error. Check server logs.' }, { status: 500 })
   }
 }

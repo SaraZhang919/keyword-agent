@@ -2,6 +2,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { downloadMarkdownReport } from '@/lib/markdownReport'
+import UsageSummary from '@/app/components/UsageSummary'
+import type { GenerationUsage } from '@/lib/generationUsage'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,7 @@ interface ArticleIdeaExpansion {
 }
 
 interface StrategyResult {
+  usage?: GenerationUsage
   primary_keyword: KeywordResult & { validated: boolean; note: string }
   supporting_keywords: KeywordResult[]
   longtail_keywords: KeywordResult[]
@@ -570,6 +573,7 @@ export default function ToolPage() {
   const [result, setResult] = useState<StrategyResult | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
   const [error, setError] = useState('')
+  const [usage, setUsage] = useState<GenerationUsage | null>(null)
   const [showExcluded, setShowExcluded] = useState(false)
   const [showCompetitor, setShowCompetitor] = useState(false)
   const [showMissing, setShowMissing] = useState(false)
@@ -624,6 +628,7 @@ export default function ToolPage() {
     setLoading(true)
     setError('')
     setResult(null)
+    setUsage(null)
 
     const msgs = ['Parsing files...', 'Pre-filtering keywords...', 'Sending to AI...', 'Building keyword strategy...']
     let i = 0
@@ -646,19 +651,22 @@ export default function ToolPage() {
       if (section.paste.trim()) formData.append(`${key}_paste`, section.paste.trim())
     }
 
-    const res = await fetch('/api/generate', { method: 'POST', body: formData })
-    clearInterval(interval)
-    setLoading(false)
-
-    if (!res.ok) {
-      const { error: err } = await res.json()
-      setError(err || 'Something went wrong')
-      return
+    try {
+      const res = await fetch('/api/generate', { method: 'POST', body: formData })
+      const data = await res.json()
+      setUsage(data.usage ?? null)
+      if (!res.ok) {
+        setError(data.error || 'Something went wrong')
+        return
+      }
+      setResult(data.result)
+      setStats(data.stats)
+    } catch {
+      setError('Could not receive the analysis response. Token usage and cost are unavailable.')
+    } finally {
+      clearInterval(interval)
+      setLoading(false)
     }
-
-    const data = await res.json()
-    setResult(data.result)
-    setStats(data.stats)
   }
 
   function handleCopyJSON() {
@@ -674,7 +682,7 @@ export default function ToolPage() {
   }
 
   function resetForm() {
-    setResult(null); setStats(null); setError('')
+    setResult(null); setStats(null); setError(''); setUsage(null)
     setSections(prev => prev.map(s => ({ ...s, file: null, paste: '' })))
     fileRefs.current.forEach(ref => { if (ref) ref.value = '' })
   }
@@ -732,6 +740,8 @@ export default function ToolPage() {
       </header>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '36px 24px' }}>
+
+        {usage && usage.stages.length > 0 && <UsageSummary usage={usage} />}
 
         {result ? (
           <div className="fade-up">

@@ -1,3 +1,5 @@
+import type { GenerationUsage } from './generationUsage'
+
 type KeywordLike = {
   keyword_id?: string
   keyword?: string
@@ -95,6 +97,7 @@ type MissingExport = {
 }
 
 type StrategyReport = {
+  usage?: GenerationUsage
   primary_keyword?: KeywordLike
   supporting_keywords?: KeywordLike[]
   longtail_keywords?: KeywordLike[]
@@ -163,6 +166,24 @@ export function formatMarkdownReport(result: StrategyReport, stats?: Stats | nul
       ['Input Keywords', 'After Volume Filter', 'After Dedup', 'Sent to AI'],
       [[stats.total, stats.afterVolumeFilter, stats.afterDedup, stats.sentToAI]]
     ))
+  }
+
+  if (result.usage) {
+    const usage = result.usage
+    const usd = (value: number | null) => value === null ? 'Unknown' : `$${value.toFixed(6)}`
+    const amount = (value: number | null) => value === null ? 'Unknown' : value
+    lines.push('## Token Usage and Estimated Cost', '', `Model: ${usage.model} · Reasoning: ${usage.reasoningEffort} · Status: ${usage.status}`, '', `Run ID: ${usage.runId}`, '')
+    lines.push(table(
+      ['Stage', 'Input', 'Cached Input', 'Cache Writes', 'Output', 'Reasoning', 'Total Tokens', 'Estimated USD'],
+      [...usage.stages.map(stage => [stage.stage, amount(stage.inputTokens), amount(stage.cachedInputTokens), amount(stage.cacheWriteTokens), amount(stage.outputTokens), amount(stage.reasoningTokens), amount(stage.totalTokens), usd(stage.estimatedCostUsd)]),
+        ['Total', amount(usage.totals.inputTokens), amount(usage.totals.cachedInputTokens), amount(usage.totals.cacheWriteTokens), amount(usage.totals.outputTokens), amount(usage.totals.reasoningTokens), amount(usage.totals.totalTokens), usd(usage.totals.estimatedCostUsd)]]
+    ))
+    if (!usage.totals.complete) lines.push(`Known cost subtotal: ${usd(usage.totals.knownCostUsd)}; full cost is unknown.`, '')
+    for (const stage of usage.stages) {
+      if (stage.ratesPerMillion) lines.push(`- ${stage.stage} rates per 1M tokens (USD): input ${stage.ratesPerMillion.input}, cached input ${stage.ratesPerMillion.cachedInput}, cache writes ${stage.ratesPerMillion.cacheWrite}, output ${stage.ratesPerMillion.output}.`)
+      if (stage.note) lines.push(`- ${stage.stage}: ${stage.note}`)
+    }
+    lines.push('', `Cached input and cache writes are included in input. Reasoning is included in output. Cost is an estimate using [published rates](${usage.pricing.source}) dated ${usage.pricing.version}, not an invoice.`, '')
   }
 
   lines.push('## Primary Keyword', '')
