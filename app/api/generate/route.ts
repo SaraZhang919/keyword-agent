@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter, parseRows, pasteToRows, seedDiscoverySignals, type SourceRole } from '@/lib/prefilter'
 import { classificationPrompt, GAP_REVIEW_NOTE, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
 import { hasOppositeConversionDirection } from '@/lib/conversionDirection'
+import { classificationResponseFormat, classificationTokenBudget, readClassification, type KeywordClassification } from '@/lib/classification'
 
 function extractJsonObject(text: string): string | null {
   const cleaned = text.replace(/```json|```/g, '').trim()
@@ -23,12 +24,6 @@ type MetricRow = {
   source_file?: string
   source_role?: SourceRole
   source: string
-}
-
-type KeywordClassification = {
-  current_page_ids: string[]
-  new_page_ids: string[]
-  out_of_brand_ids: string[]
 }
 
 const GENERIC_TOKENS = new Set([
@@ -145,21 +140,6 @@ function expandCurrentPageClassification(
     },
     addedIds,
   }
-}
-
-function validatedIds(value: unknown, availableIds: Set<string>): string[] {
-  if (!Array.isArray(value)) return []
-  return Array.from(new Set(value.filter((id): id is string => typeof id === 'string' && availableIds.has(id))))
-}
-
-function parseClassification(value: unknown, availableIds: Set<string>): KeywordClassification | null {
-  if (!value || typeof value !== 'object') return null
-  const data = value as Record<string, unknown>
-  const currentPageIds = validatedIds(data.current_page_ids, availableIds)
-  const newPageIds = validatedIds(data.new_page_ids, availableIds)
-  const outOfBrandIds = validatedIds(data.out_of_brand_ids, availableIds)
-  if (currentPageIds.length === 0 && newPageIds.length === 0 && outOfBrandIds.length === 0) return null
-  return { current_page_ids: currentPageIds, new_page_ids: newPageIds, out_of_brand_ids: outOfBrandIds }
 }
 
 function normalizeKeyword(keyword: unknown): string {
@@ -503,9 +483,9 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 5000,
+        max_tokens: classificationTokenBudget(filtered.length),
         temperature: 0.1,
-        response_format: { type: 'json_object' },
+        response_format: classificationResponseFormat,
         messages: [
           { role: 'system', content: classificationPrompt(pageType, primaryKeyword, brandScope) },
           { role: 'user', content: `Keyword TSV (${filtered.length} rows):\n\n${keywordList}` },
@@ -519,20 +499,24 @@ export async function POST(request: NextRequest) {
     }
 
     const classificationData = await classificationRes.json()
-    const classificationText = classificationData.choices?.[0]?.message?.content ?? ''
-    const classificationJson = extractJsonObject(classificationText)
-    let classification: KeywordClassification | null = null
-    try {
-      classification = classificationJson ? parseClassification(JSON.parse(classificationJson), availableIds) : null
-    } catch {
-      classification = null
+    const parsedClassification = readClassification(classificationData, availableIds)
+    if (!parsedClassification.ok) {
+      // Metadata only: never log uploaded keywords, model content or credentials.
+      console.error('Keyword classification failed:', {
+        code: parsedClassification.code,
+        responseId: classificationData.id ?? null,
+        model: classificationData.model ?? MODEL,
+        finishReason: classificationData.choices?.[0]?.finish_reason ?? null,
+        admittedCount: filtered.length,
+        maxTokens: classificationTokenBudget(filtered.length),
+        usage: classificationData.usage ?? null,
+        invalidIdCount: parsedClassification.invalidIdCount,
+        missingIdCount: parsedClassification.missingIdCount,
+      })
+      return NextResponse.json({ error: parsedClassification.error, code: parsedClassification.code }, { status: 502 })
     }
 
-    if (!classification) {
-      console.error('Invalid keyword classification:', classificationText.slice(0, 500))
-      return NextResponse.json({ error: 'Keyword classification returned invalid data. Please run the analysis again.' }, { status: 500 })
-    }
-
+    let classification = parsedClassification.classification
     classification = enforceConversionDirection(classification, filtered, primaryKeyword)
     const expandedClassification = expandCurrentPageClassification(classification, filtered, primaryKeyword, pageType)
     classification = expandedClassification.classification

@@ -43,6 +43,8 @@ Rules:
 - Conversion direction is part of the page job. If the submitted keyword clearly expresses X-to-Y, do not classify Y-to-X as current-page fit.
 - An ID may appear in both current_page_ids and new_page_ids when it is useful as current-page coverage and also has enough distinct intent for a future standalone page.
 - Do not invent IDs. Every returned ID must exist in the TSV.
+- Classify EVERY supplied ID into at least one array. An out_of_brand_ids entry must not also appear in an in-scope array. Do not repeat an ID within an array.
+- Return only the three ID arrays, with compact JSON and no explanations or keyword text.
 
 Return exactly: {"current_page_ids":["kw_0001"],"new_page_ids":["kw_0002"],"out_of_brand_ids":["kw_0003"]}`
 }

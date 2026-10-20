@@ -20,6 +20,8 @@
 
 当前使用 OpenAI gpt-4.1，经 /v1/chat/completions 完成两阶段请求：关键词 ID 分类，再生成策略；最后按输入数据校验 ID、指标及章节边界。不是 Claude，也没有 GPT-4o 回退。补齐 Gap 后可能增加输入 token 和耗时。
 
+分类阶段使用严格 JSON Schema，并按实际送入的关键词数调整输出上限（最少 5,000，最多 32,768 token）。解析前检查完成状态；输出截断、拒绝、结构错误、未知 ID、遗漏 ID 或分类冲突会返回具体错误并停止策略生成，不自动重试。失败日志只记录响应 ID、模型、完成原因、输入数量和 token 用量等诊断信息。较大的输出上限只提供容量，实际费用和耗时取决于实际生成量。
+
 支持 CSV、XLSX 多工作表及粘贴行，最多 5 个来源分区。必需 Keyword 和 Volume，支持 KD、Intent/Intents、CPC、Competition Density、Trend、SERP Features 及竞品网址排名列。请明确选择来源角色，尤其是 Current Page / Competitor Gap。
 
 ## 本地开发
@@ -36,7 +38,7 @@ npm run dev
 ## 验证
 
 ~~~powershell
-node --test tests/keyword-gap.test.cjs
+node --test tests/keyword-gap.test.cjs tests/classification.test.cjs
 npm run build
 ~~~
 
