@@ -26,28 +26,22 @@ const envelope = (content, tokenUsage = usage(), finishReason = 'stop') => ({
   id: 'test-response', model, usage: tokenUsage,
   choices: [{ finish_reason: finishReason, message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }],
 });
-const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-12, `${actual} != ${expected}`);
-
-test('input, cache reads, writes and output are priced once; reasoning stays inside output', () => {
+test('token counts retain cache details and keep reasoning inside output', () => {
   const result = measureUsage(envelope({}), model);
   assert.equal(result.totalTokens, 11000);
   assert.equal(result.reasoningTokens, 400);
-  close(result.estimatedCostUsd, 0.0299);
-  assert.deepEqual(result.ratesPerMillion, { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 12 });
+  assert.equal(result.inputTokens, 10000);
+  assert.equal(result.outputTokens, 1000);
+  assert.equal(result.cachedInputTokens, 2000);
+  assert.equal(result.cacheWriteTokens, 3000);
+  assert.equal(result.note, null);
 });
 
-for (const input of [272000, 272001]) test('context pricing threshold at ' + input + ' input tokens', () => {
-  const result = measureUsage(envelope({}, usage(input, 1000, 1000, 2000, 100)), model);
-  const rates = input > 272000 ? [4, 0.4, 5, 18] : [2, 0.2, 2.5, 12];
-  close(result.estimatedCostUsd, ((input - 3000) * rates[0] + 1000 * rates[1] + 2000 * rates[2] + 1000 * rates[3]) / 1e6);
-});
-
-test('same-day recorded compatibility calls total 950 tokens and USD 0.00231', () => {
+test('recorded compatibility calls total 950 tokens', () => {
   // Use frozen provider counters, not a new paid request.
   const counters = [usage(872, 30, 0, 0, 0), usage(37, 11, 0, 0, 0)];
   const measured = counters.map(record => measureUsage({ model, usage: record }, model));
   assert.equal(measured.reduce((sum, stage) => sum + stage.totalTokens, 0), 950);
-  close(measured.reduce((sum, stage) => sum + stage.estimatedCostUsd, 0), 0.00231);
 });
 
 for (const [label, response] of [
@@ -57,14 +51,19 @@ for (const [label, response] of [
   ['cache overlaps beyond input', envelope({}, usage(100, 5, 80, 30, 0))],
   ['reasoning exceeds output', envelope({}, usage(100, 5, 0, 0, 6))],
   ['inconsistent total', envelope({}, { ...usage(), total_tokens: 5 })],
-  ['unpriced model', { ...envelope({}), model: 'unknown-model' }],
-]) test(label + ' keeps cost unknown', () => {
+]) test(label + ' is reported in usage notes', () => {
   const result = measureUsage(response, model);
-  assert.equal(result.estimatedCostUsd, null);
   assert.ok(result.note);
 });
 
-test('usage tracker preserves response bodies and prices context per call rather than run total', async () => {
+test('token counts do not require a model pricing configuration', () => {
+  const result = measureUsage({ ...envelope({}), model: 'another-model' }, model);
+  assert.equal(result.model, 'another-model');
+  assert.equal(result.totalTokens, 11000);
+  assert.equal(result.note, null);
+});
+
+test('usage tracker preserves response bodies and sums stage counts', async () => {
   const tracker = createGenerationUsage(model, 'low');
   for (const stage of ['classification', 'strategy']) {
     const response = await tracker.capture(stage, async () => Response.json(envelope({ intact: true }, usage(200000, 1000, 0, 0, 0))));
@@ -73,29 +72,26 @@ test('usage tracker preserves response bodies and prices context per call rather
   const result = tracker.report('completed');
   assert.equal(result.totals.inputTokens, 400000);
   assert.equal(result.totals.totalTokens, 402000);
-  close(result.totals.estimatedCostUsd, 0.824);
-  assert.ok(result.stages.every(stage => stage.ratesPerMillion.input === 2));
+  assert.equal(result.totals.outputTokens, 2000);
   assert.notEqual(result.runId, createGenerationUsage(model, 'low').report('completed').runId);
 });
 
-test('network failure retains prior usage and distinguishes known subtotal from unknown full cost', async () => {
+test('network failure retains prior stage usage and keeps missing totals unknown', async () => {
   const tracker = createGenerationUsage(model, 'low');
   await tracker.capture('classification', async () => Response.json(envelope({})));
   await assert.rejects(tracker.capture('strategy', async () => { throw Error('network failed'); }));
   const result = tracker.report('failed');
   assert.equal(result.status, 'failed');
   assert.equal(result.stages.length, 2);
-  assert.equal(result.totals.complete, false);
-  assert.equal(result.totals.estimatedCostUsd, null);
   assert.equal(result.totals.inputTokens, null);
   assert.equal(result.stages[1].inputTokens, null);
-  close(result.totals.knownCostUsd, 0.0299);
+  assert.equal(result.stages[0].totalTokens, 11000);
+  assert.equal(result.totals.totalTokens, null);
 });
 
-test('no attempted API calls have zero cost', () => {
+test('no attempted API calls have zero tokens', () => {
   const result = createGenerationUsage(model, 'low').report('failed');
   assert.equal(result.stages.length, 0);
-  assert.equal(result.totals.estimatedCostUsd, 0);
   assert.equal(result.totals.totalTokens, 0);
 });
 
@@ -135,14 +131,14 @@ test('successful route returns both stages, logs metadata only, and exports the 
   assert.equal(result.calls, 2);
   assert.deepEqual(result.body.result.usage, result.body.usage);
   assert.equal(result.body.usage.totals.totalTokens, 22000);
-  close(result.body.usage.totals.estimatedCostUsd, 0.0598);
+  assert.doesNotMatch(JSON.stringify(result.body.usage), /estimatedCostUsd|knownCostUsd|ratesPerMillion|pricing/);
   const logged = result.logs.find(log => log[0] === 'Keyword analysis usage:');
   assert.deepEqual(JSON.parse(logged[1]), result.body.usage);
   assert.equal(logged[1].includes('protect pdf'), false);
   assert.equal(logged[1].includes('offline-test-key'), false);
   const markdown = formatMarkdownReport(result.body.result, result.body.stats);
-  assert.match(markdown, /Token Usage and Estimated Cost/);
-  assert.match(markdown, /\$0\.059800/);
+  assert.match(markdown, /## Token Usage/);
+  assert.doesNotMatch(markdown, /Estimated Cost|USD|\$/);
   assert.match(markdown, /Cached Input/);
   assert.match(markdown, /Reasoning is included in output/);
   assert.match(markdown, new RegExp(result.body.usage.runId));
@@ -153,7 +149,7 @@ test('classification truncation retains its paid usage without calling strategy'
   assert.equal(result.status, 502);
   assert.equal(result.calls, 1);
   assert.equal(result.body.usage.status, 'failed');
-  close(result.body.usage.totals.estimatedCostUsd, 0.0299);
+  assert.equal(result.body.usage.totals.totalTokens, 11000);
 });
 
 test('strategy invalid JSON retains usage from both calls', async () => {
@@ -162,7 +158,7 @@ test('strategy invalid JSON retains usage from both calls', async () => {
   assert.equal(result.calls, 2);
   assert.equal(result.body.usage.status, 'failed');
   assert.equal(result.body.usage.stages.length, 2);
-  close(result.body.usage.totals.estimatedCostUsd, 0.0598);
+  assert.equal(result.body.usage.totals.totalTokens, 22000);
 });
 
 for (const [label, failure] of [
@@ -173,7 +169,6 @@ for (const [label, failure] of [
   const result = await runRoute([Response.json(classification), failure]);
   assert.equal(result.status, 500);
   assert.equal(result.calls, 2);
-  assert.equal(result.body.usage.totals.estimatedCostUsd, null);
-  assert.equal(result.body.usage.totals.complete, false);
-  close(result.body.usage.totals.knownCostUsd, 0.0299);
+  assert.equal(result.body.usage.totals.totalTokens, null);
+  assert.equal(result.body.usage.stages[0].totalTokens, 11000);
 });

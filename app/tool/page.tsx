@@ -662,7 +662,7 @@ export default function ToolPage() {
       setResult(data.result)
       setStats(data.stats)
     } catch {
-      setError('Could not receive the analysis response. Token usage and cost are unavailable.')
+      setError('Could not receive the analysis response. Token usage is unavailable.')
     } finally {
       clearInterval(interval)
       setLoading(false)
@@ -740,8 +740,6 @@ export default function ToolPage() {
       </header>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '36px 24px' }}>
-
-        {usage && usage.stages.length > 0 && <UsageSummary usage={usage} />}
 
         {result ? (
           <div className="fade-up">
@@ -1131,6 +1129,7 @@ export default function ToolPage() {
             </button>
           </div>
         )}
+        {usage && usage.stages.length > 0 && <UsageSummary usage={usage} />}
       </div>
     </div>
   )
