@@ -1091,9 +1091,9 @@ export default function ToolPage() {
               </div>
 
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
-                Upload CSV/XLSX with Keyword + Volume columns, or paste rows as keyword [tab] volume [tab] KD.
+                Upload CSV/XLSX with Keyword + Volume columns (or 关键词 + 搜索量), or paste rows as keyword [tab] volume [tab] KD.
                 Choose a source role so the AI uses broad match, current-page gap, and page-cluster data for the right decisions.
-                预处理：读取所有工作表，过滤搜索量低于 30 的词并去重。保留原版共用的 500 个预选名额，再单独补齐有效竞品 Gap 词（最多 500 个）。Broad 词表过大或太杂可能影响结果，建议手动删除无关词，尽量控制在 500 个有效唯一词以内；因名额与其他来源共用，仍需检查来源覆盖。
+                预处理：读取所有工作表，过滤搜索量低于 30 的词并去重。保留原版共用的 500 个预选名额，再单独补齐有效竞品 Gap 词（所有 Gap 分区合计最多 700 个）。Broad 词表过大或太杂可能影响结果，建议手动删除无关词，尽量控制在 500 个有效唯一词以内；因名额与其他来源共用，仍需检查来源覆盖。
               </p>
             </div>
 

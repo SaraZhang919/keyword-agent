@@ -86,7 +86,7 @@ export async function fileToRows(
   const bytes = new Uint8Array(buffer)
 
   try {
-    const wb = XLSX.read(bytes, { type: 'array' })
+    const wb = XLSX.read(bytes, { type: 'array', ...(/\.csv$/i.test(file.name) ? { codepage: 65001 } : {}) })
     const rows: Record<string, string>[] = []
 
     for (const sheetName of wb.SheetNames) {
@@ -98,15 +98,15 @@ export async function fileToRows(
       if (!sheetRows.length) continue
 
       const headers = Object.keys(sheetRows[0])
-      const kwCol = findCol(headers, ['keyword', 'keywords', 'query', 'search term'])
-      const volCol = findCol(headers, ['volume', 'search volume', 'avg. monthly searches', 'monthly searches'])
+      const kwCol = findCol(headers, ['keyword', 'keywords', 'query', 'search term', '关键词', '关键字', '關鍵詞', '關鍵字'])
+      const volCol = findCol(headers, ['volume', 'search volume', 'avg. monthly searches', 'monthly searches', '搜索量', '搜尋量'])
       if (!kwCol || !volCol) continue
 
       rows.push(...sheetRows.map(row => ({ ...row, __sheet: sheetName })))
     }
 
     if (!rows.length) {
-      return { rows: [], error: `No valid keyword sheet found in "${file.name}". Expected Keyword + Volume columns.` }
+      return { rows: [], error: `No valid keyword sheet found in "${file.name}". Expected Keyword + Volume columns (or 关键词 + 搜索量).` }
     }
 
     return { rows }
@@ -176,8 +176,8 @@ export function parseRows(
   if (!raw.length) return { rows: [] }
 
   const headers = Object.keys(raw[0])
-  const kwCol = findCol(headers, ['keyword', 'keywords', 'query', 'search term'])
-  const volCol = findCol(headers, ['volume', 'search volume', 'avg. monthly searches', 'monthly searches'])
+  const kwCol = findCol(headers, ['keyword', 'keywords', 'query', 'search term', '关键词', '关键字', '關鍵詞', '關鍵字'])
+  const volCol = findCol(headers, ['volume', 'search volume', 'avg. monthly searches', 'monthly searches', '搜索量', '搜尋量'])
 
   if (!kwCol) return { rows: [], error: `No keyword column found in file for section "${source}". Expected a column named "Keyword".` }
   if (!volCol) return { rows: [], error: `No volume column found in file for section "${source}". Expected a column named "Volume".` }
@@ -185,8 +185,8 @@ export function parseRows(
   const sourceRole = detectSourceRole(headers, canonicalRole(requestedRole))
   const kdCol = findCol(headers, ['kd', 'kd%', 'keyword difficulty', 'difficulty'])
   const cpcCol = findCol(headers, ['cpc', 'cpc (usd)', 'cost per click'])
-  const competitionCol = findCol(headers, ['com.', 'competitive density', 'competition', 'density', 'competition density'])
-  const intentCol = findCol(headers, ['intent', 'intents'])
+  const competitionCol = findCol(headers, ['com.', 'competitive density', 'competition', 'density', 'competition density', '竞争', '競爭'])
+  const intentCol = findCol(headers, ['intent', 'intents', '意图', '意圖'])
   const trendCol = findCol(headers, ['trend'])
   const serpCol = findCol(headers, ['serp features', 'serp'])
   const pageCol = findCol(headers, ['page'])
@@ -304,7 +304,7 @@ export function mergeAndFilter(
   // including rows whose canonical metrics came from the broad source.
   const baseSelected = selected.size
   const gapKeys = new Set(volFiltered.filter(row => row.source_role === 'current_page_gap').map(row => row.keyword))
-  if (gapKeys.size > 500) throw new Error(`Competitor gap contains ${gapKeys.size} eligible unique keywords. Keep at most 500 across gap sections; none were sent to AI.`)
+  if (gapKeys.size > 700) throw new Error(`Competitor gap contains ${gapKeys.size} eligible unique keywords. Keep at most 700 across gap sections; none were sent to AI.`)
   for (const keyword of gapKeys) selected.set(keyword, map.get(keyword)!)
   const broadKeys = new Set(volFiltered.filter(row => row.source_role === 'broad_match').map(row => row.keyword))
   const broadIncluded = [...broadKeys].filter(keyword => selected.has(keyword)).length

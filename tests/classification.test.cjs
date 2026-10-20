@@ -21,10 +21,10 @@ const envelope = (value, finish_reason = 'stop', extra = {}) => ({
   choices: [{ finish_reason, message: { content: typeof value === 'string' ? value : JSON.stringify(value), ...extra } }],
 });
 
-test('budget grows with admitted rows, including the 1500-row broad/gap union', () => {
+test('budget grows with admitted rows, including the 1200-row broad/gap union', () => {
   assert.equal(classificationTokenBudget(1), 5000);
   assert.equal(classificationTokenBudget(500), 11024);
-  assert.equal(classificationTokenBudget(1500), 31024);
+  assert.equal(classificationTokenBudget(1200), 25024);
   assert.equal(classificationTokenBudget(10000), 32768);
   assert.equal(classificationResponseFormat.type, 'json_schema');
   assert.equal(classificationResponseFormat.json_schema.strict, true);
@@ -105,26 +105,26 @@ test('route stops before strategy and logs metadata when classification hits its
   } finally { console.error = previousError; }
 });
 
-test('route admits 500 broad + 500 gap rows with a scaled budget and retains both stages', async () => {
+test('route admits 500 broad + 700 gap rows with a scaled budget and retains both stages', async () => {
   let calls = 0;
   await withMockProvider(async (url, options) => {
     const payload = JSON.parse(options.body);
     calls++;
     if (calls === 1) {
-      assert.equal(payload.max_tokens, 21024);
+      assert.equal(payload.max_tokens, 25024);
       assert.equal(payload.response_format.json_schema.strict, true);
       const suppliedIds = payload.messages[1].content.split('\n').filter(line => /^kw_/.test(line)).map(line => line.split('\t')[0]);
-      assert.equal(suppliedIds.length, 1000);
+      assert.equal(suppliedIds.length, 1200);
       return Response.json(envelope({ current_page_ids: suppliedIds, new_page_ids: [], out_of_brand_ids: [] }));
     }
     assert.equal(payload.response_format.type, 'json_object');
     return Response.json(envelope({ primary_keyword: null }));
   }, async () => {
-    const response = await load('app/api/generate/route.ts').POST(request(500, 500));
+    const response = await load('app/api/generate/route.ts').POST(request(500, 700));
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(calls, 2);
-    assert.equal(data.stats.sentToAI, 1000);
-    assert.equal(data.result.data_audit.keyword_classification.current_page_ids.length, 1000);
+    assert.equal(data.stats.sentToAI, 1200);
+    assert.equal(data.result.data_audit.keyword_classification.current_page_ids.length, 1200);
   });
 });

@@ -125,7 +125,7 @@ export default function HelpPage() {
             <Item title="1. Parse">读取所有有效 sheet，识别 Keyword、Volume 及可选 KD、CPC、Intent、Trend、SERP 等列。</Item>
             <Item title="2. Filter">普通关键词 Volume&lt;30 会被过滤；少量紧密的 access/trust modifier 只可作为措辞提示。</Item>
             <Item title="3. Deduplicate">相同关键词去重时，按 Source Role 采用 Broad Match Keywords（All Keywords）→ Current Page / Competitor Gap（Gap Export）→ Page Cluster / Page Opportunities（Pages Export）的数据。只有 Source Role 优先级相同时，才保留 Volume 更高或指标更完整的行；Source File 显示最终采用的实际文件。</Item>
-            <Item title="4. 原版预选 + Gap 补齐">先按原版规则共选最多 500 词，再单独补齐有效竞品 Gap 词（Gap 合计最多 500 词）。总输入可能超过 500；Broad 过大或太杂时建议手动删除无关词。</Item>
+            <Item title="4. 原版预选 + Gap 补齐">先按原版规则共选最多 500 词，再单独补齐有效竞品 Gap 词（Gap 合计最多 700 词）。总输入可能超过 500；Broad 过大或太杂时建议手动删除无关词。</Item>
             <Item title="5. Stage 1">将 ID 分为 Current Page、New Page 和 Out of Brand；明确的反向转换不会进入 Current Page。</Item>
             <Item title="6. Stage 2 + Audit">生成策略后，服务器重新匹配 ID、恢复精确指标、移除越界建议并稳定各 Section。</Item>
           </Grid>
