@@ -1,7 +1,7 @@
 export default function KeywordUpdates() {
   return <section lang="zh-CN" aria-label="关键词处理更新说明" style={{padding:20,marginBottom:20,border:'1px solid var(--accent)',borderRadius:6,lineHeight:1.9,color:'var(--text-dim)',fontSize:13}}>
     <h2 style={{color:'var(--accent)',fontSize:16}}>本次更新：保留原版分析，补齐竞品 Gap</h2>
-    <p>保留原版结果布局、搜索量 ≥30 过滤、关键词标准化后精确去重、指标优先级和两阶段分析。使用 OpenAI gpt-4.1：先进行关键词 ID 相关性分类，再结合分类与原始指标生成策略。没有增加“原始／手动清理”模式，也不使用此前实验版的额外语义筛选规则。</p>
+    <p>保留原版结果布局、搜索量 ≥30 过滤、关键词标准化后精确去重、指标优先级和两阶段分析。两个阶段均使用 OpenAI GPT-5.6 Terra（low 推理）：先进行关键词 ID 相关性分类，再结合分类与原始指标生成策略。推理和回答共享每阶段的 token 上限，不自动重试。没有增加“原始／手动清理”模式，也不使用此前实验版的额外语义筛选规则。</p>
     <h3>Broad 词表越大，不代表结果越好</h3>
     <p>原版按搜索量、来源角色和长尾信号共选最多 500 个关键词。大量无关词可能占用名额，让相关的低搜索量词未进入 AI，也可能增加语义噪声。建议上传前手动删除与本页功能、转换方向、用户任务明显无关的 Broad 词，保留相关的近义词、问句和长尾变体；不要只因搜索量低就删掉相关词。</p>
     <p>建议尽量控制在 <strong>500 个有效唯一 Broad 词以内</strong>。有效唯一词指搜索量 ≥30、跨文件标准化去重后的数量，并非 Excel 总行数。500 个原版名额与 Gap、Cluster 和 Custom 来源共用，因此 Broad 少于 500 也可能被截断，应以来源覆盖数为准。即使未截断，过于杂乱的词表也可能影响推荐质量。</p>

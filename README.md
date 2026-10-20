@@ -18,7 +18,9 @@
 
 ## 模型与流程
 
-当前使用 OpenAI gpt-4.1，经 /v1/chat/completions 完成两阶段请求：关键词 ID 分类，再生成策略；最后按输入数据校验 ID、指标及章节边界。不是 Claude，也没有 GPT-4o 回退。补齐 Gap 后可能增加输入 token 和耗时。
+当前两个阶段均使用 OpenAI gpt-5.6-terra，明确设置 reasoning_effort=low，经 /v1/chat/completions 完成关键词 ID 分类与策略生成；最后按输入数据校验 ID、指标及章节边界。不是 Claude，也没有自动模型回退或重试。补齐 Gap 后可能增加输入 token 和耗时。
+
+使用 max_completion_tokens 限制推理与可见输出的合计 token：分类阶段沿用按关键词数计算的 5,000–32,768 上限；策略阶段维持 8,000。low 推理也计入这些上限，不是额外的无限推理预算。输入 token 仍按上传证据量计费，本次仅切换模型与兼容参数，关键词选择和页面类型规则不变。配置依据：[模型文档](https://developers.openai.com/api/docs/models/gpt-5.6-terra)、[Chat Completions 参数](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。
 
 分类阶段按本次输入动态生成严格 JSON Schema：每个实际 keyword_id 都是必填属性，对应 current_page、new_page、current_and_new 或 out_of_brand 中的一个决定。服务器再转换成策略阶段使用的三个 ID 池；不再依赖模型自行列全三个数组。按实际送入的关键词数调整输出上限（最少 5,000，最多 32,768 token）。解析前检查完成状态；输出截断、拒绝、结构错误、未知 ID 或遗漏 ID 会返回具体错误并停止策略生成，不自动重试。失败日志只记录响应 ID、模型、完成原因、输入数量和 token 用量等诊断信息。较大的输出上限只提供容量，实际费用和耗时取决于实际生成量。
 

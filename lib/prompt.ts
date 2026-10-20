@@ -1,4 +1,5 @@
-export const MODEL = 'gpt-4.1'
+export const MODEL = 'gpt-5.6-terra'
+export const REASONING_EFFORT = 'low'
 export const DEFAULT_BRAND_SCOPE = 'AI documentation, PDF and document tools, document intelligence, AI workspace, and AI workflow products and content.'
 
 export function isCompatiblePrompt(prompt: string): boolean {

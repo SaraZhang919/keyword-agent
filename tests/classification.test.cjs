@@ -151,8 +151,12 @@ test('route admits 500 broad + 700 gap rows with a scaled budget and retains bot
   await withMockProvider(async (url, options) => {
     const payload = JSON.parse(options.body);
     calls++;
+    assert.equal(payload.model, 'gpt-5.6-terra');
+    assert.equal(payload.reasoning_effort, 'low');
+    assert.equal(Object.hasOwn(payload, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(payload, 'temperature'), false);
     if (calls === 1) {
-      assert.equal(payload.max_tokens, 25024);
+      assert.equal(payload.max_completion_tokens, 25024);
       assert.equal(payload.response_format.json_schema.strict, true);
       const suppliedIds = payload.messages[1].content.split('\n').filter(line => /^kw_/.test(line)).map(line => line.split('\t')[0]);
       assert.equal(suppliedIds.length, 1200);
@@ -161,6 +165,7 @@ test('route admits 500 broad + 700 gap rows with a scaled budget and retains bot
       validate(payload.response_format.json_schema.schema, value);
       return Response.json(envelope(value));
     }
+    assert.equal(payload.max_completion_tokens, 8000);
     assert.equal(payload.response_format.type, 'json_object');
     return Response.json(envelope({ primary_keyword: null }));
   }, async () => {

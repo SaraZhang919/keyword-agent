@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fileToRows, findLowDemandModifierGuidance, formatForAI, mergeAndFilter, parseRows, pasteToRows, seedDiscoverySignals, type SourceRole } from '@/lib/prefilter'
-import { classificationPrompt, GAP_REVIEW_NOTE, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL } from '@/lib/prompt'
+import { classificationPrompt, GAP_REVIEW_NOTE, DEFAULT_BRAND_SCOPE, DEFAULT_PROMPT, isCompatiblePrompt, MODEL, REASONING_EFFORT } from '@/lib/prompt'
 import { hasOppositeConversionDirection } from '@/lib/conversionDirection'
 import { classificationResponseFormat, classificationTokenBudget, readClassification, type KeywordClassification } from '@/lib/classification'
 
@@ -483,8 +483,8 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: classificationTokenBudget(filtered.length),
-        temperature: 0.1,
+        max_completion_tokens: classificationTokenBudget(filtered.length),
+        reasoning_effort: REASONING_EFFORT,
         response_format: classificationResponseFormat(availableIds),
         messages: [
           { role: 'system', content: classificationPrompt(pageType, primaryKeyword, brandScope) },
@@ -506,6 +506,7 @@ export async function POST(request: NextRequest) {
         code: parsedClassification.code,
         responseId: classificationData.id ?? null,
         model: classificationData.model ?? MODEL,
+        reasoningEffort: REASONING_EFFORT,
         finishReason: classificationData.choices?.[0]?.finish_reason ?? null,
         admittedCount: filtered.length,
         maxTokens: classificationTokenBudget(filtered.length),
@@ -556,8 +557,8 @@ If a seed signal lacks corroborating measured NEW_PAGE_KEYWORD_IDS, place it in 
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8000,
-        temperature: 0.1,
+        max_completion_tokens: 8000,
+        reasoning_effort: REASONING_EFFORT,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: finalPrompt },
